@@ -2,7 +2,6 @@ import * as socketIO from "socket.io-client";
 import type { GameAction, GameActionResult } from "./types";
 import { env } from "$env/dynamic/public";
 import { actionErrorStore, connectionStore } from "./stores";
-import { localizeServerMessage } from "./i18n";
 
 let socket: socketIO.Socket | null = null;
 
@@ -48,13 +47,13 @@ export function emitGameAction(action: GameAction): Promise<GameActionResult> {
         code: "ACTION_TIMEOUT",
         message: "Сервер не подтвердил действие. Проверьте соединение и попробуйте снова.",
       };
-      showActionError(localizeServerMessage(result.message));
+      showActionError(result.message);
       resolve(result);
     }, 5000);
 
     activeSocket.emit("gameAction", action, (result: GameActionResult) => {
       clearTimeout(timeout);
-      if (!result.success) showActionError(localizeServerMessage(result.message));
+      if (!result.success) showActionError(result.message);
       resolve(result);
     });
   });

@@ -150,7 +150,7 @@
     io.emit(
       "startGame",
       ({ success, message }: { success: boolean; message?: string }) => {
-        if (!success) actionErrorStore.set(message || $t("lobby.startFailed"));
+        if (!success) actionErrorStore.set(message || "Не удалось начать игру.");
       }
     );
   }

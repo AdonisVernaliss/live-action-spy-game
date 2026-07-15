@@ -4,7 +4,7 @@
   import { playerStore } from "$lib/stores";
   import { gotoReplace } from "$lib/util";
   import { emitGameAction } from "$lib/websocket";
-  import { t } from "$lib/i18n";
+  import { language, localizeServerMessage, t } from "$lib/i18n";
   import { isTestMinigameActive, returnFromTestMinigame } from "$lib/testMinigame";
   import { onMount } from "svelte";
 
@@ -88,7 +88,7 @@
     const finalTaskNumber = taskNumber ?? getCurrentTaskNumber();
 
     if (finalTaskNumber == null || Number.isNaN(finalTaskNumber)) {
-      error = $t("done.error.current");
+      error = "Не удалось определить выполненное задание. Вернитесь в игру и снова отсканируйте точку.";
       return;
     }
 
@@ -111,14 +111,14 @@
     const [type, info] = contents.split(":");
 
     if (type !== "task") {
-      error = $t("done.error.notTask");
+      error = "Это не метка задания.";
       return;
     }
 
     const taskNumber = getTaskNumberFromTag(info);
 
     if (taskNumber == null) {
-      error = $t("done.error.unknown", { tag: info });
+      error = `Неизвестная метка задания: ${info}`;
       return;
     }
 
@@ -138,7 +138,7 @@
 
     {#if error}
       <div class="error-box">
-        {error}
+        {localizeServerMessage(error, $language)}
       </div>
     {/if}
 

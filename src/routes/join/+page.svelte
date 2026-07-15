@@ -9,7 +9,7 @@
   import type { Socket } from "socket.io-client";
   import { lobbyStore, playerColorStore } from "$lib/stores";
   import type { Color } from "$lib/types";
-  import { localizeServerMessage, t } from "$lib/i18n";
+  import { language, localizeServerMessage, t } from "$lib/i18n";
 
   let socket: Socket;
   let joinCode = "";
@@ -23,12 +23,12 @@
     const name = playerName.trim();
 
     if (!name) {
-      error = $t("common.error.nickname");
+      error = "Введите ник";
       return;
     }
 
     if (!joinCode) {
-      error = $t("join.noCode");
+      error = "Не указан код лобби";
       return;
     }
 
@@ -68,7 +68,7 @@
 
     socket.on("error", ({ error: err }: { error: string }) => {
       joining = false;
-      error = localizeServerMessage(err);
+      error = err;
       console.error("join error", err);
     });
 
@@ -127,7 +127,7 @@
         <NameInput bind:playerName />
 
         <p class:invisible={error === ""} class="error-text">
-          {error}&nbsp;
+          {localizeServerMessage(error, $language)}&nbsp;
         </p>
       </div>
 

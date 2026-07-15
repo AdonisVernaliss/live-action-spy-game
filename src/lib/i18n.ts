@@ -603,12 +603,9 @@ const messages: Record<Language, Record<string, string>> = {
   },
 };
 
-function getInitialLanguage(): Language {
-  if (typeof window === "undefined") return "ru";
-  return window.localStorage.getItem("protocol150Language") === "en" ? "en" : "ru";
-}
-
-export const language = writable<Language>(getInitialLanguage());
+// Prerendered pages are generated in Russian. Keep the first client value the
+// same so hydration can finish before the saved preference is applied.
+export const language = writable<Language>("ru");
 
 export function initializeLanguage() {
   if (typeof window === "undefined") return;
@@ -738,10 +735,77 @@ const serverMessagesEn: Record<string, string> = {
     "Use Cyrillic or Latin letters, numbers, spaces, hyphens, and underscores.",
   "Сервер не подтвердил действие. Проверьте соединение и попробуйте снова.":
     "The server did not confirm the action. Check your connection and try again.",
+  "Не удалось открыть панель лобби.": "Could not open the lobby panel.",
+  "Не удалось начать игру.": "Could not start the game.",
+  "Не удалось сохранить площадку.": "Could not save the venue.",
+  "Не удалось войти.": "Could not sign in.",
+  "Не удалось выполнить действие ведущего.": "Could not run the host action.",
+  "Игровая сессия больше недоступна.": "The game session is no longer available.",
+  "Команда выполнена": "Command completed",
+  "Введите ник": "Enter a nickname.",
+  "Не указан код лобби": "Lobby code is missing.",
+  "Сохранённая игра не найдена": "Saved game not found.",
+  "Сохранённое лобби больше не существует": "The saved lobby no longer exists.",
+  "Не удалось определить выполненное задание. Вернитесь в игру и снова отсканируйте точку.":
+    "Could not identify the completed task. Return to the game and scan the point again.",
+  "Это не метка задания.": "This is not a task tag.",
+  "Недопустимый победитель": "Invalid winner.",
+  "Некорректное состояние паузы": "Invalid pause state.",
+  "Пауза доступна только во время матча": "Pausing is only available during a match.",
+  "Игра уже на паузе": "The game is already paused.",
+  "Игра уже продолжается": "The game is already running.",
+  "Игроков можно удалять только до старта матча":
+    "Players can only be removed before the match starts.",
+  "Нельзя удалить создателя лобби": "The lobby creator cannot be removed.",
+  "Симуляции удаляются отдельной командой":
+    "Simulated players are removed with a separate command.",
+  "Можно удалить только отключившегося игрока":
+    "Only a disconnected player can be removed.",
+  "Статус ведущего не относится к матчу": "The host has no in-match status.",
+  "Недопустимый статус игрока": "Invalid player status.",
+  "Роли можно изменять только в тестовом режиме":
+    "Roles can only be changed in test mode.",
+  "Ведущему нельзя назначить игровую роль": "The host cannot be assigned a player role.",
+  "Недопустимая роль игрока": "Invalid player role.",
+  "Сначала продолжите игру": "Resume the game first.",
+  "Текущую фазу нельзя продвинуть": "The current phase cannot be advanced.",
+  "Активного взлома защиты нет": "There is no active firewall breach.",
+  "Активного саботажа нет": "There is no active sabotage.",
+  "Некорректное значение тестового режима": "Invalid test-mode value.",
+  "Тестовый режим меняется только до или после игры":
+    "Test mode can only be changed before or after a game.",
+  "Тестовую площадку можно создать только на этапе настройки":
+    "A test venue can only be created during venue setup.",
+  "Сначала включите тестовый режим": "Enable test mode first.",
+  "Тестовых игроков можно добавлять только до старта":
+    "Simulated players can only be added before the game starts.",
+  "Нет свободных мест для тестовых игроков": "There are no free simulated-player slots.",
+  "Тестовых игроков можно удалять только до старта":
+    "Simulated players can only be removed before the game starts.",
+  "Тестовых игроков в лобби нет": "There are no simulated players in the lobby.",
+  "Тестовую игру можно начать только из лобби":
+    "A test game can only be started from the lobby.",
+  "Кулдауны можно сбрасывать только в тестовом режиме":
+    "Cooldowns can only be reset in test mode.",
+  "Прогресс можно имитировать только в тестовом режиме":
+    "Task progress can only be simulated in test mode.",
+  "Раунд не запущен": "The round has not started.",
+  "Собрание можно имитировать только в тестовом режиме":
+    "A meeting can only be simulated in test mode.",
+  "Нет живого игрока для собрания": "There is no living player available to call a meeting.",
+  "Саботаж можно имитировать только в тестовом режиме":
+    "Sabotage can only be simulated in test mode.",
+  "Недопустимый вид саботажа": "Invalid sabotage type.",
+  "В лобби нет живого внедрённого агента":
+    "There is no living infiltrated agent in the lobby.",
+  "Неизвестное действие ведущего": "Unknown host action.",
 };
 
-export function localizeServerMessage(message: string | null | undefined) {
-  if (!message || get(language) === "ru") return message || "";
+export function localizeServerMessage(
+  message: string | null | undefined,
+  targetLanguage: Language = get(language)
+) {
+  if (!message || targetLanguage === "ru") return message || "";
   if (serverMessagesEn[message]) return serverMessagesEn[message];
 
   return message
@@ -758,6 +822,12 @@ export function localizeServerMessage(message: string | null | undefined) {
       "At least $1 players are required to start."
     )
     .replace(
+      /^Для тестового запуска требуется минимум игроков: (\d+)$/,
+      "At least $1 players are required for a test start."
+    )
+    .replace(/^Лобби (.+) не существует$/, "Lobby $1 does not exist.")
+    .replace(/^Неизвестная метка задания: (.+)$/, "Unknown task tag: $1")
+    .replace(
       /^Способность восстанавливается: (\d+) сек\.$/,
       "Ability cooldown: $1s."
     )
@@ -773,8 +843,11 @@ const gameReasonsEn: Record<string, string> = {
   "Игра завершена ведущим": "The game was ended by the host",
 };
 
-export function localizeGameReason(reason: string | null | undefined) {
-  if (!reason || get(language) === "ru") return reason || "";
+export function localizeGameReason(
+  reason: string | null | undefined,
+  targetLanguage: Language = get(language)
+) {
+  if (!reason || targetLanguage === "ru") return reason || "";
   return gameReasonsEn[reason] || reason;
 }
 

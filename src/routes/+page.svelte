@@ -8,7 +8,7 @@
   import type { Socket } from "socket.io-client";
   import { lobbyStore, playerColorStore } from "$lib/stores";
   import type { Color } from "$lib/types";
-  import { localizeServerMessage, t } from "$lib/i18n";
+  import { language, localizeServerMessage, t } from "$lib/i18n";
 
   let deviceSupported = false;
 
@@ -25,7 +25,7 @@
         hostParticipates,
       });
     } else {
-      error = $t("common.error.nickname");
+      error = "Введите ник";
     }
   }
 
@@ -88,7 +88,7 @@
 
     if (storedGameInfo == null) {
       restoringSession = false;
-      error = $t("start.savedMissing");
+      error = "Сохранённая игра не найдена";
       return;
     }
 
@@ -102,7 +102,7 @@
       localStorage.removeItem("gameInfo");
       localStorage.removeItem("currentTaskNumber");
       restoringSession = false;
-      error = $t("start.savedGone");
+      error = "Сохранённое лобби больше не существует";
       return;
     }
 
@@ -127,7 +127,7 @@
           localStorage.removeItem("gameInfo");
           localStorage.removeItem("currentTaskNumber");
           restoringSession = false;
-          error = $t("start.savedGone");
+          error = "Сохранённое лобби больше не существует";
         }
       }
     );
@@ -147,7 +147,7 @@
     socket = getSocketIO();
 
     socket.on("error", ({ error: err }: { error: string }) => {
-      error = localizeServerMessage(err);
+      error = err;
     });
 
     socket.once(
@@ -250,7 +250,7 @@
           </fieldset>
 
           <p class:invisible={error === ""} class="error-text">
-            {error}&nbsp;
+            {localizeServerMessage(error, $language)}&nbsp;
           </p>
         </div>
 

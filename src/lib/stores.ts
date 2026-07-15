@@ -42,7 +42,8 @@ export const actionErrorStore = writable<string | null>(null);
 export const notificationStore: Readable<string | null> = derived(
   [lobbyStore, actionErrorStore, language],
   ([lobby, actionError, currentLanguage]) => {
-    if (actionError != null) return localizeServerMessage(actionError);
+    if (actionError != null)
+      return localizeServerMessage(actionError, currentLanguage);
     if (lobby == null) return null;
     if (
       lobby.activeEffects.firewallBreach != null &&

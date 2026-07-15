@@ -36,6 +36,12 @@
   onMount(() => {
     socket = getSocketIO();
     hasSavedTemplate = readLocationTemplate() != null;
+    if (!hasSavedTemplate) {
+      const storedLanguage = localStorage.getItem("protocol150Language") === "en" ? "en" : "ru";
+      templateName = storedLanguage === "en" ? "Primary venue" : "Основная площадка";
+      locations = makeBaseLocations(storedLanguage);
+      assignments = makeDefaultAssignments(locations);
+    }
 
     const redirectTimer = setTimeout(() => {
       if ($lobbyStore == null) gotoReplace("/");

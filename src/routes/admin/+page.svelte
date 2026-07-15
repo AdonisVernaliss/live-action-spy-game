@@ -164,8 +164,7 @@
           authMode = null;
           if (silent) hostSession = null;
           if (!silent)
-            error = localizeServerMessage(message) ||
-              bi("Не удалось открыть панель лобби.", "Could not open the lobby panel.");
+            error = message || "Не удалось открыть панель лобби.";
           if (secret) authenticateGlobal();
           return;
         }
@@ -189,7 +188,7 @@
         if (!success) {
           authenticated = false;
           authMode = null;
-          error = localizeServerMessage(message) || bi("Не удалось войти.", "Could not sign in.");
+          error = message || "Не удалось войти.";
           sessionStorage.removeItem("protocol150AdminSecret");
           return;
         }
@@ -222,7 +221,7 @@
       "reconnected",
       ({ success, lobby, color }: any) => {
         if (!success) {
-          error = bi("Игровая сессия больше недоступна.", "The game session is no longer available.");
+          error = "Игровая сессия больше недоступна.";
           return;
         }
 
@@ -286,11 +285,10 @@
       ({ success, message, lobbies: updated }: any) => {
         runningAction = "";
         if (!success) {
-          error = localizeServerMessage(message) ||
-            bi("Не удалось выполнить действие ведущего.", "Could not run the host action.");
+          error = message || "Не удалось выполнить действие ведущего.";
           return;
         }
-        notice = bi("Команда выполнена", "Command completed");
+        notice = "Команда выполнена";
         if (updated) setLobbies(updated);
         window.setTimeout(() => (notice = ""), 1800);
       }
@@ -426,6 +424,11 @@
       game_resumed: ["продолжение", "resumed"],
       player_removed: ["удаление игрока", "player removed"],
       server_recovery: ["восстановление сервера", "server recovery"],
+      player_sync_requested: ["запрос синхронизации", "sync requested"],
+      player_sync_started: ["синхронизация", "synchronization"],
+      player_sync_completed: ["завершение синхронизации", "sync completed"],
+      player_sync_expired: ["запрос истёк", "sync expired"],
+      player_sync_cancelled: ["отмена синхронизации", "sync cancelled"],
     };
     return labels[type] ? bi(...labels[type]) : bi("событие", "event");
   }
@@ -445,6 +448,7 @@
       "Имитировано выполнение задания": "Task completion simulated",
       "Лобби восстановлено после перезапуска сервера":
         "Lobby restored after server restart",
+      "Запрос синхронизации отменён": "Synchronization request cancelled",
     };
     if (exact[message]) return exact[message];
 
@@ -452,6 +456,13 @@
       .replace(/^Лобби создано: (.+) \(ведущий только управляет\)$/, "Lobby created: $1 (host only)")
       .replace(/^Лобби создано: (.+) \(ведущий участвует\)$/, "Lobby created: $1 (host participates)")
       .replace(/^(.+) подключился к лобби$/, "$1 joined the lobby")
+      .replace(
+        /^Запрос синхронизации (.+) и (.+) истёк$/,
+        "Synchronization request between $1 and $2 expired"
+      )
+      .replace(/^(.+) запросил синхронизацию с (.+)$/, "$1 requested synchronization with $2")
+      .replace(/^(.+) и (.+) завершили синхронизацию$/, "$1 and $2 completed synchronization")
+      .replace(/^(.+) и (.+) начали синхронизацию$/, "$1 and $2 started synchronization")
       .replace(/^(.+) устранён игроком (.+)$/, "$1 was eliminated by $2")
       .replace(/^(.+) отправил голос$/, "$1 submitted a vote")
       .replace(/^(.+) двигался во время вирусной проверки$/, "$1 moved during the virus scan")
@@ -519,7 +530,7 @@
           placeholder={bi("Секрет технического администратора", "Technical administrator secret")}
         />
       </label>
-      {#if error}<p class="error">{error}</p>{/if}
+      {#if error}<p class="error">{localizeServerMessage(error, $language)}</p>{/if}
       <button on:click={authenticateGlobal} disabled={authenticating || !secret}>
         {authenticating ? bi("Проверка…", "Checking…") : bi("Войти по секрету", "Sign in with secret")}
       </button>
@@ -555,8 +566,8 @@
       </div>
     </header>
 
-    {#if error}<div class="error-banner">{error}</div>{/if}
-    {#if notice}<div class="notice-banner">{notice}</div>{/if}
+    {#if error}<div class="error-banner">{localizeServerMessage(error, $language)}</div>{/if}
+    {#if notice}<div class="notice-banner">{localizeServerMessage(notice, $language)}</div>{/if}
 
     <div class="dashboard-grid">
       {#if authMode === "global"}
