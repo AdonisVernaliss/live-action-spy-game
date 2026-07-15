@@ -40,24 +40,18 @@ export class Player {
   assignTasks(activities) {
     const pastTasks = new Set(this.tasks.map((t) => t.number));
 
-    const availableTasks = Array.from(Array(N_TOTAL_TASKS).keys())
-      .map((idx) => (pastTasks.has(idx) ? null : idx))
-      .filter((t) => t !== null);
+    const allTasks = Array.from(Array(N_TOTAL_TASKS).keys());
+    const availableTasks = allTasks.filter((task) => !pastTasks.has(task));
+    const taskPool = (
+      availableTasks.length >= TASK_BATCH_SIZE ? availableTasks : allTasks
+    ).slice();
 
     const newTasks = new Set();
 
-    while (newTasks.size < TASK_BATCH_SIZE) {
-      if (
-        availableTasks.length < TASK_BATCH_SIZE &&
-        newTasks.size === availableTasks.length
-      ) {
-        const taskNr = randInt(0, pastTasks.size - 1);
-        const task = Array.from(pastTasks.values())[taskNr];
-        newTasks.add(task);
-      } else {
-        const task = randInt(0, availableTasks.length - 1);
-        newTasks.add(task);
-      }
+    while (newTasks.size < TASK_BATCH_SIZE && taskPool.length > 0) {
+      const taskIndex = randInt(0, taskPool.length - 1);
+      const [taskNumber] = taskPool.splice(taskIndex, 1);
+      newTasks.add(taskNumber);
     }
 
     this.tasks = [];

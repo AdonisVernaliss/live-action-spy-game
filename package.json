@@ -6,7 +6,7 @@
     "dev": "vite dev",
     "start": "vite dev",
     "build": "vite build",
-    "test": "node --test server/lobbies.test.js",
+    "test": "node --test server/*.test.js",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"

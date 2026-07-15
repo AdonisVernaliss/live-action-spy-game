@@ -1,6 +1,7 @@
 <script lang="ts">
   import { gotoReplace, makeNumberListWith100Sum } from "$lib/util";
   import { language } from "$lib/i18n";
+  import { onDestroy } from "svelte";
 
   export let nRepeats = 3;
   export let numbersInMinigame = 12;
@@ -9,6 +10,7 @@
   let firstSelectedNumber: number | null = null;
   let message = "";
   let wins = 0;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   const messageText = () => message === "wrong"
     ? bi("❌ Неверно. Попробуйте снова.", "❌ Incorrect. Try again.")
@@ -45,7 +47,7 @@
     message = "correct";
 
     if (wins === nRepeats) {
-      setTimeout(() => {
+      finishTimer = setTimeout(() => {
         gotoReplace("/minigamedone");
       }, 300);
     } else {
@@ -53,6 +55,10 @@
       firstSelectedNumber = null;
     }
   }
+
+  onDestroy(() => {
+    if (finishTimer) clearTimeout(finishTimer);
+  });
 </script>
 
 <main class="sum-page">

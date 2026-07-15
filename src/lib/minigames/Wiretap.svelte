@@ -12,6 +12,7 @@
   let active = false;
   let finished = false;
   let interval: ReturnType<typeof setInterval> | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   $: errors = values.map((value, index) => Math.abs(value - targets[index]));
@@ -42,7 +43,7 @@
       active = false;
       finished = true;
       cleanup();
-      setTimeout(() => gotoReplace("/minigamedone"), 800);
+      finishTimer = setTimeout(() => gotoReplace("/minigamedone"), 800);
       return;
     }
     channel += 1;
@@ -62,7 +63,9 @@
 
   function cleanup() {
     if (interval != null) clearInterval(interval);
+    if (finishTimer != null) clearTimeout(finishTimer);
     interval = null;
+    finishTimer = null;
   }
   onDestroy(cleanup);
 </script>

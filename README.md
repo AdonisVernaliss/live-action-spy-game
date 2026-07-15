@@ -351,6 +351,7 @@ Configuration is loaded from the root `.env` file.
 | `DEV_MODE` | `false` | Enables server-side development behavior. Never enable for a real game. |
 | `ADMIN_SECRET` | example placeholder | Global technical password for access to all active lobbies. |
 | `ALLOWED_ORIGINS` | empty | Comma-separated frontend origins when frontend and backend are deliberately hosted separately. |
+| `LOBBY_STATE_FILE` | `data/lobbies.json` | Optional absolute path for persisted lobby state, backups, or isolated test instances. |
 
 Recommended production-style local configuration:
 

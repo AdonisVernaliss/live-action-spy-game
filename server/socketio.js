@@ -3,6 +3,7 @@ import http from "http";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { config } from "./config.js";
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
 const buildDirectory = path.resolve(serverDirectory, "../build");
@@ -12,13 +13,15 @@ app.set("trust proxy", 1);
 
 app.use(
   (req, res, next) => {
-    if (req.url !== "/" && !req.url.includes(".")) {
-      if (req.url.includes("?")) {
-        const [url, query] = req.url.split("?");
-        req.url = url + ".html?" + query;
-      } else {
-        req.url = req.url + ".html";
-      }
+    const [rawPathname, ...queryParts] = req.url.split("?");
+    const pathname =
+      rawPathname.length > 1 && rawPathname.endsWith("/")
+        ? rawPathname.slice(0, -1)
+        : rawPathname;
+
+    if (pathname !== "/" && !pathname.includes(".")) {
+      const query = queryParts.length > 0 ? `?${queryParts.join("?")}` : "";
+      req.url = `${pathname}.html${query}`;
     }
 
     next();
@@ -31,7 +34,10 @@ export const server = http.createServer(app);
 
 export const io = new Server(server, {
   cors: {
-    origin: true,
+    // Same-origin production needs no CORS headers. Split development is
+    // allowed only for the explicitly configured frontend origins.
+    origin:
+      config.allowedOrigins.length > 0 ? config.allowedOrigins : false,
     methods: ["GET", "POST"],
     credentials: true,
   },

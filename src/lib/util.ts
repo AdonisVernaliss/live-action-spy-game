@@ -3,7 +3,13 @@ import { devNotiStore, lobbyStore } from "./stores";
 
 // Return an array of `amount` numbers of which AT LEAST two sum up to 100
 export function makeNumberListWith100Sum(amount: number): number[] {
-  const firstPart = getRandomInt(1, 99);
+  if (!Number.isInteger(amount) || amount < 2 || amount > 99) {
+    throw new RangeError("amount must be an integer between 2 and 99");
+  }
+
+  // Avoid 50 + 50: the list contains unique values, so that pair would only
+  // render one selectable button and could leave the round unsolvable.
+  const firstPart = getRandomInt(1, 49);
   const secondPart = 100 - firstPart;
 
   // Generate the list of `amount` random unique numbers

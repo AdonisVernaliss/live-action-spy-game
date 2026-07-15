@@ -159,7 +159,6 @@
 
         <ScanButton
           on:scanned={({ detail }) => {
-            console.log("Scanned", detail.result);
             completeTaskFromScan(detail.result);
           }}
         />

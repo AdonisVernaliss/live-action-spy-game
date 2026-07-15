@@ -37,12 +37,6 @@
     joining = true;
     error = "";
 
-    console.debug("joinLobby emit", {
-      name,
-      lobbyId: joinCode,
-      socketConnected: socket?.connected,
-    });
-
     socket.emit("joinLobby", {
       name,
       lobbyId: joinCode,
@@ -69,7 +63,6 @@
     socket.on("error", ({ error: err }: { error: string }) => {
       joining = false;
       error = err;
-      console.error("join error", err);
     });
 
     socket.once(
@@ -83,8 +76,6 @@
         color: Color;
         id: string;
       }) => {
-        console.debug("joinedLobby received", { lobby, color, id });
-
         playerColorStore.set(color);
         lobbyStore.set(lobby);
 

@@ -799,6 +799,62 @@ const serverMessagesEn: Record<string, string> = {
   "В лобби нет живого внедрённого агента":
     "There is no living infiltrated agent in the lobby.",
   "Неизвестное действие ведущего": "Unknown host action.",
+  "Действия разработчика отключены.": "Developer actions are disabled.",
+  "Конфигурация площадки отсутствует или повреждена.":
+    "The venue configuration is missing or invalid.",
+  "Площадку можно настроить только до входа в лобби.":
+    "The venue can only be configured before entering the lobby.",
+  "Перезапуск лобби этой командой не поддерживается.":
+    "Restarting the lobby with this command is not supported.",
+  "В лобби сейчас нет собрания": "There is no meeting in the lobby right now.",
+  "Ведущему не требуется подтверждать готовность":
+    "The host does not need to confirm readiness.",
+  "Ведущий не участвует в голосовании": "The host does not participate in voting.",
+  "Ведущий не участвует в игровых действиях":
+    "The host does not participate in game actions.",
+  "Взлом защиты уже активен": "A firewall breach is already active.",
+  "Взлом игрока пока недоступен": "Player hacking is not available yet.",
+  "Вирусная проверка недоступна вне активного раунда":
+    "The virus scan is unavailable outside an active round.",
+  "Для этого игрока нет активной вирусной проверки":
+    "There is no active virus scan for this player.",
+  "Другой саботаж уже активен": "Another sabotage is already active.",
+  "Игра не запущена": "The game has not started.",
+  "Игра уже началась и не принимает новых игроков":
+    "The game has already started and is not accepting new players.",
+  "Игрок не может сообщить о собственном теле":
+    "A player cannot report their own body.",
+  "Игрок не найден в лобби": "Player not found in the lobby.",
+  "Игрок уже готов": "The player is already ready.",
+  "Игрок уже проголосовал": "The player has already voted.",
+  "На собрание могут войти только живые игроки":
+    "Only living players can enter the meeting.",
+  "Наказание вирусной проверки неприменимо":
+    "The virus scan penalty cannot be applied.",
+  "Настройка площадки уже завершена": "Venue setup has already been completed.",
+  "Недопустимый внедрённый агент": "Invalid infiltrated agent.",
+  "Некорректные данные саботажа": "Invalid sabotage data.",
+  "Нельзя голосовать за ведущего": "You cannot vote for the host.",
+  "Нельзя голосовать за погибшего игрока": "You cannot vote for a dead player.",
+  "Нельзя устранить самого себя": "You cannot eliminate yourself.",
+  "Погибшие агенты не могут запускать саботаж":
+    "Dead agents cannot launch sabotage.",
+  "Погибшие игроки не могут голосовать": "Dead players cannot vote.",
+  "Погибшие игроки не могут сообщать о телах": "Dead players cannot report bodies.",
+  "Погибшие игроки не могут устранять других":
+    "Dead players cannot eliminate other players.",
+  "Саботаж доступен только внедрённым агентам":
+    "Sabotage is only available to infiltrated agents.",
+  "Сейчас не идёт сбор на собрание": "A meeting assembly is not in progress.",
+  "Устранять игроков могут только внедрённые агенты":
+    "Only infiltrated agents can eliminate players.",
+  "Цель уже не жива": "The target is no longer alive.",
+  "Этот игрок не участвует в голосовании":
+    "This player does not participate in voting.",
+  "Этот игрок не является доступным для обнаружения телом":
+    "This player is not an available body to report.",
+  "Этот ник уже используется. Продолжите сохранённую сессию или выберите другой ник.":
+    "This nickname is already in use. Continue the saved session or choose another nickname.",
 };
 
 export function localizeServerMessage(
@@ -827,6 +883,19 @@ export function localizeServerMessage(
     )
     .replace(/^Лобби (.+) не существует$/, "Lobby $1 does not exist.")
     .replace(/^Неизвестная метка задания: (.+)$/, "Unknown task tag: $1")
+    .replace(
+      /^Локация для (.+) не указана или слишком длинная\.$/,
+      "The location for $1 is missing or too long."
+    )
+    .replace(
+      /^Отключены игроки: (.+)\. Верните их в лобби или удалите через пульт\.$/,
+      "Disconnected players: $1. Return them to the lobby or remove them from the host panel."
+    )
+    .replace(
+      /^Саботаж восстанавливается: (\d+) сек\.$/,
+      "Sabotage cooldown: $1s."
+    )
+    .replace(/^Неизвестный вид саботажа: (.+)$/, "Unknown sabotage type: $1")
     .replace(
       /^Способность восстанавливается: (\d+) сек\.$/,
       "Ability cooldown: $1s."

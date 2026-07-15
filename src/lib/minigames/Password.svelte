@@ -1,6 +1,7 @@
 <script lang="ts">
   import { gotoReplace } from "$lib/util";
   import { language } from "$lib/i18n";
+  import { onDestroy } from "svelte";
 
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
@@ -32,9 +33,18 @@
 
   let current = 0;
   let waiting = false;
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  function schedule(callback: () => void, delay: number) {
+    const timer = setTimeout(() => {
+      pendingTimers.delete(timer);
+      callback();
+    }, delay);
+    pendingTimers.add(timer);
+  }
 
   function gewonnen() {
-    setTimeout(() => {
+    schedule(() => {
       gotoReplace("/minigamedone");
     }, 300);
   }
@@ -67,11 +77,10 @@
     }
 
     sequence = nextSequence;
-    console.log("Password sequence:", sequence);
   }
 
   function scroll() {
-    setTimeout(() => {
+    schedule(() => {
       const scrollback = document.getElementById("scrollback");
 
       if (scrollback != null) {
@@ -156,7 +165,7 @@
     buttonlit[index] = true;
     buttonlit = buttonlit.slice();
 
-    setTimeout(() => {
+    schedule(() => {
       buttonlit[index] = false;
       buttonlit = buttonlit.slice();
     }, 300);
@@ -169,6 +178,11 @@
   }
 
   resetGame();
+
+  onDestroy(() => {
+    for (const timer of pendingTimers) clearTimeout(timer);
+    pendingTimers.clear();
+  });
 </script>
 
 <main class="password-page">

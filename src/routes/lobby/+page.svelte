@@ -131,22 +131,6 @@
   function startGame() {
     const io = getSocketIO();
 
-    console.log("START GAME CLICKED", {
-      socketConnected: io.connected,
-      lobbyId: $lobbyStore?.id,
-      lobbyState: $lobbyStore?.status.state,
-      creator: $lobbyStore?.creator,
-      player: $playerStore?.name,
-      playerColor: $playerStore?.color,
-      playerIsCreator,
-      dev,
-      enoughPlayers,
-      allPlayersReady,
-      readyCount,
-      playerCount,
-      canStartGame,
-    });
-
     io.emit(
       "startGame",
       ({ success, message }: { success: boolean; message?: string }) => {

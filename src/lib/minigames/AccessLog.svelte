@@ -20,6 +20,7 @@
   let locked = false;
   let failed = false;
   let timer: ReturnType<typeof setInterval> | null = null;
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   const ruleText = (text: string[]) => text[$language === "en" ? 1 : 0];
   const feedbackText = () => ({
@@ -28,10 +29,25 @@
     block: bi("Угроза должна быть заблокирована", "This threat should have been blocked"),
   }[feedback] || bi("Примените только текущее правило", "Apply only the current rule"));
 
-  onMount(startGame); onDestroy(() => timer && clearInterval(timer));
+  onMount(startGame); onDestroy(cleanup);
+
+  function schedule(callback: () => void, delay: number) {
+    const timeout = setTimeout(() => {
+      pendingTimers.delete(timeout);
+      callback();
+    }, delay);
+    pendingTimers.add(timeout);
+  }
+
+  function cleanup() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    for (const timeout of pendingTimers) clearTimeout(timeout);
+    pendingTimers.clear();
+  }
 
   function startGame() {
-    if (timer) clearInterval(timer);
+    cleanup();
     correct=0;strikes=0;combo=0;timeLeft=55;ruleIndex=0;feedback="";locked=false;failed=false;current=makeLog();
     timer=setInterval(()=>{timeLeft-=1;if(timeLeft<=0)fail();},1000);
   }
@@ -44,9 +60,9 @@
   function rand(min:number,max:number){return min+Math.floor(Math.random()*(max-min+1));}
   function decide(allow:boolean){
     if(locked||failed)return;locked=true;const shouldAllow=rules[ruleIndex].check(current);
-    if(allow===shouldAllow){correct+=1;combo+=1;feedback="correct";if(correct>=GOAL){if(timer)clearInterval(timer);setTimeout(()=>gotoReplace("/minigamedone"),700);return;}}
-    else{strikes+=1;combo=0;feedback=shouldAllow?"allow":"block";if(strikes>=3){setTimeout(fail,500);return;}}
-    setTimeout(()=>{ruleIndex=Math.min(2,Math.floor(correct/4));current=makeLog();feedback="";locked=false;},550);
+    if(allow===shouldAllow){correct+=1;combo+=1;feedback="correct";if(correct>=GOAL){if(timer)clearInterval(timer);schedule(()=>gotoReplace("/minigamedone"),700);return;}}
+    else{strikes+=1;combo=0;feedback=shouldAllow?"allow":"block";if(strikes>=3){schedule(fail,500);return;}}
+    schedule(()=>{ruleIndex=Math.min(2,Math.floor(correct/4));current=makeLog();feedback="";locked=false;},550);
   }
   function fail(){if(timer)clearInterval(timer);failed=true;locked=true;}
 </script>

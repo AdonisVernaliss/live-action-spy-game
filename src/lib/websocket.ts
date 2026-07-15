@@ -13,12 +13,10 @@ export function getSocketIO(): socketIO.Socket {
       window.location.hostname === "127.0.0.1"
         ? "http://localhost:3000"
         : window.location.origin);
-    console.log({ SERVER });
     socket = socketIO
       .connect(SERVER)
       .on("connect", () => {
         connectionStore.set("connected");
-        console.debug(`Connected to socketIO`);
       })
       .on("disconnect", () => {
         connectionStore.set(navigator.onLine ? "reconnecting" : "offline");
@@ -29,7 +27,6 @@ export function getSocketIO(): socketIO.Socket {
       .on("sessionReplaced", () => {
         connectionStore.set("replaced");
       });
-    console.debug("Created new socket");
   }
   return socket;
 }

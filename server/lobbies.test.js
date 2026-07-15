@@ -196,6 +196,31 @@ test("Russian and mixed Unicode nicknames are accepted", () => {
   assert.equal(playerNameValid("!!!")[0], false);
 });
 
+test("cycling tasks selects real task numbers outside the previous batch", () => {
+  const player = makePlayer("green", { name: "crew" });
+  player.tasks = [0, 1, 2].map((number) => ({ number }));
+  const activities = Object.fromEntries(
+    NFC_ACTIVITIES.map((name, index) => [
+      name,
+      { id: index + 1, name, room: `Room ${index + 1}` },
+    ])
+  );
+  const originalRandom = Math.random;
+
+  try {
+    Math.random = () => 0;
+    player.assignTasks(activities);
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  assert.deepEqual(
+    player.tasks.map((task) => task.number),
+    [3, 4, 5]
+  );
+  assert.ok(player.tasks.every((task) => task.description.includes("Room")));
+});
+
 test("firewall sabotage requires an impostor and both matching terminals", () => {
   const green = makePlayer("green", { name: "crew" });
   const blue = makePlayer("blue", { name: "crew" });

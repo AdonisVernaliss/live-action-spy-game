@@ -22,6 +22,7 @@
   let moves = 0;
   let timeLeft = GAME_TIME;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
   let failed = false;
   let won = false;
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
@@ -109,7 +110,9 @@
 
   function stopTimer() {
     if (timer) clearInterval(timer);
+    if (finishTimer) clearTimeout(finishTimer);
     timer = null;
+    finishTimer = null;
   }
 
   function directionBetween(from: number, to: number) {
@@ -185,7 +188,7 @@
     if (next.has(sinkCell) && hasConnector(sinkMask, E)) {
       won = true;
       stopTimer();
-      setTimeout(() => gotoReplace("/minigamedone"), 800);
+      finishTimer = setTimeout(() => gotoReplace("/minigamedone"), 800);
     }
   }
 

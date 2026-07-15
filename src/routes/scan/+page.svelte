@@ -102,7 +102,7 @@
         return;
     }
 
-    const reconnected = await reconnectFromLocalStorage();
+    await reconnectFromLocalStorage();
 
     // Give Svelte stores time to update playerStore after lobbyStore/playerColorStore are set.
     await tick();
@@ -110,14 +110,6 @@
 
     sessionReady = $lobbyStore != null && $playerStore != null;
     loading = false;
-
-    console.debug("scan session check", {
-        reconnected,
-        hasLobby: $lobbyStore != null,
-        hasPlayer: $playerStore != null,
-        player: $playerStore?.name,
-        color: $playerColorStore,
-    });
 
     if (!sessionReady) {
         error = bi(
@@ -168,8 +160,23 @@
         return;
       }
 
-      const gameInfo: { playerId: string; lobbyId: string; color: Color } =
-        JSON.parse(storedGameInfo);
+      let gameInfo: { playerId: string; lobbyId: string; color: Color };
+      try {
+        const parsed = JSON.parse(storedGameInfo);
+        if (
+          typeof parsed?.playerId !== "string" ||
+          typeof parsed?.lobbyId !== "string" ||
+          typeof parsed?.color !== "string"
+        ) {
+          throw new Error("Saved session is incomplete");
+        }
+        gameInfo = parsed;
+      } catch {
+        localStorage.removeItem("gameInfo");
+        localStorage.removeItem("currentTaskNumber");
+        resolve(false);
+        return;
+      }
 
       const timeout = setTimeout(() => {
         socket.off("reconnected", onReconnect);
@@ -306,15 +313,6 @@
       );
       return;
     }
-
-    if ($playerStore.role.name !== "crew") {
-      error = bi(
-        "Внедрённые агенты не могут выполнять задания оперативников.",
-        "Infiltrated agents cannot complete operative tasks."
-      );
-      return;
-    }
-
 
     if (
       $playerStore.syncTask?.required === true &&

@@ -161,8 +161,6 @@
         color: Color;
         id: string;
       }) => {
-        console.debug("joinedLobby received", { lobby, color, id });
-
         playerColorStore.set(color);
         lobbyStore.set(lobby);
 

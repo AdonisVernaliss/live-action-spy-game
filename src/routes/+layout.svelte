@@ -168,7 +168,23 @@
       null;
 
     if (storedGameInfo != null) {
-      gameInfo = JSON.parse(storedGameInfo);
+      try {
+        const parsed = JSON.parse(storedGameInfo);
+        if (
+          typeof parsed?.playerId !== "string" ||
+          typeof parsed?.lobbyId !== "string" ||
+          typeof parsed?.color !== "string"
+        ) {
+          throw new Error("Saved session is incomplete");
+        }
+        gameInfo = parsed;
+      } catch {
+        localStorage.removeItem("gameInfo");
+        localStorage.removeItem("currentTaskNumber");
+        connectionStore.set("connected");
+        gotoReplace("/");
+        return;
+      }
     }
 
     if (gameInfo == null) return;
@@ -238,14 +254,16 @@
     };
 
     const onConnect = () => {
+      const shouldRestoreConnection = connectionWasLost;
       if (connectionWasLost) {
         connectionWasLost = false;
       }
 
       if (
-        $lobbyStore == null &&
-        $page.route.id !== "/" &&
-        $page.route.id !== "/join"
+        shouldRestoreConnection ||
+        ($lobbyStore == null &&
+          $page.route.id !== "/" &&
+          $page.route.id !== "/join")
       ) {
         tryReconnect();
       }

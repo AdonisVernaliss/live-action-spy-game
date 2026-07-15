@@ -20,6 +20,7 @@
   let frame: number | null = null;
   let previous = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
   let scaleElement: HTMLDivElement;
   let targetElement: HTMLDivElement;
   let cursorElement: HTMLDivElement;
@@ -142,14 +143,16 @@
     finished = true;
     stopTimers();
     message = "won";
-    setTimeout(() => gotoReplace("/minigamedone"), 700);
+    finishTimer = setTimeout(() => gotoReplace("/minigamedone"), 700);
   }
 
   function stopTimers() {
     if (frame != null) cancelAnimationFrame(frame);
     if (timer != null) clearInterval(timer);
+    if (finishTimer != null) clearTimeout(finishTimer);
     frame = null;
     timer = null;
+    finishTimer = null;
   }
 
   function stopGame() {

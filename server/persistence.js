@@ -3,8 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
-const dataDirectory = path.resolve(serverDirectory, "../data");
-const stateFile = path.join(dataDirectory, "lobbies.json");
+const defaultStateFile = path.resolve(serverDirectory, "../data/lobbies.json");
+const stateFile = process.env.LOBBY_STATE_FILE
+  ? path.resolve(process.env.LOBBY_STATE_FILE)
+  : defaultStateFile;
+const dataDirectory = path.dirname(stateFile);
 const temporaryStateFile = `${stateFile}.tmp`;
 const persistenceEnabled =
   process.env.NODE_ENV !== "test" && process.env.NODE_TEST_CONTEXT == null;

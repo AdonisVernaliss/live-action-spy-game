@@ -21,6 +21,7 @@
   let failed = false;
   let tickTimer: ReturnType<typeof setInterval> | null = null;
   let driftTimer: ReturnType<typeof setInterval> | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   $: total = allocation.reduce((sum, value) => sum + Number(value), 0);
   $: sectorsOk = allocation.map(
@@ -79,7 +80,7 @@
   function win() {
     active = false;
     cleanup();
-    setTimeout(() => gotoReplace("/minigamedone"), 800);
+    finishTimer = setTimeout(() => gotoReplace("/minigamedone"), 800);
   }
 
   function fail() {
@@ -91,8 +92,10 @@
   function cleanup() {
     if (tickTimer) clearInterval(tickTimer);
     if (driftTimer) clearInterval(driftTimer);
+    if (finishTimer) clearTimeout(finishTimer);
     tickTimer = null;
     driftTimer = null;
+    finishTimer = null;
   }
 </script>
 

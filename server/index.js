@@ -17,6 +17,11 @@ io.on("connection", (client) => {
   let currentPlayer = null;
   let playerLobby = null;
 
+  const objectPayload = (value) =>
+    value != null && typeof value === "object" ? value : {};
+  const acknowledgement = (value) =>
+    typeof value === "function" ? value : () => {};
+
   function attachPlayerToSocket(lobby, player) {
     if (player.socketId != null && player.socketId !== client.id) {
       io.to(player.socketId).emit("sessionReplaced");
@@ -62,7 +67,8 @@ io.on("connection", (client) => {
     return client.data.isAdmin || client.data.hostLobbyId === lobbyId;
   }
 
-  client.on("createLobby", ({ name, hostParticipates }) => {
+  client.on("createLobby", (payload = {}) => {
+    const { name, hostParticipates } = objectPayload(payload);
     const normalizedName = typeof name === "string" ? name.trim().replace(/\s+/g, " ") : name;
     const [nameValid, error] = playerNameValid(normalizedName);
 
@@ -82,7 +88,8 @@ io.on("connection", (client) => {
     console.debug(`${player.name} created lobby ${lobby.id}`);
   });
 
-  client.on("joinLobby", ({ name, lobbyId }) => {
+  client.on("joinLobby", (payload = {}) => {
+    const { name, lobbyId } = objectPayload(payload);
     const normalizedName = typeof name === "string" ? name.trim().replace(/\s+/g, " ") : name;
     const [nameValid, error] = playerNameValid(normalizedName);
 
@@ -108,7 +115,8 @@ io.on("connection", (client) => {
     console.debug(`${player.name} joined lobby ${lobby.id}`);
   });
 
-  client.on("reconnect", ({ color, playerId, lobbyId }) => {
+  client.on("reconnect", (payload = {}) => {
+    const { color, playerId, lobbyId } = objectPayload(payload);
     const lobby = getLobby(lobbyId);
 
     if (lobby == null) {
@@ -136,7 +144,9 @@ io.on("connection", (client) => {
     console.debug(`Player ${player.name} reconnected successfully`);
   });
 
-  client.on("setActivities", ({ activities } = {}, acknowledge = () => {}) => {
+  client.on("setActivities", (payload = {}, acknowledge = () => {}) => {
+    const { activities } = objectPayload(payload);
+    acknowledge = acknowledgement(acknowledge);
     if (currentPlayer == null || playerLobby == null) {
       console.error(`Cannot set activities as one of these is null`, {
         currentPlayer,
@@ -169,7 +179,8 @@ io.on("connection", (client) => {
 
     const normalizedActivities = {};
     for (const [index, name] of NFC_ACTIVITIES.entries()) {
-      const room = activities[name]?.room?.trim();
+      const rawRoom = activities[name]?.room;
+      const room = typeof rawRoom === "string" ? rawRoom.trim() : "";
       if (typeof room !== "string" || room.length < 1 || room.length > 80) {
         acknowledge({
           success: false,
@@ -185,6 +196,7 @@ io.on("connection", (client) => {
   });
 
   client.on("startGame", (acknowledge = () => {}) => {
+    acknowledge = acknowledgement(acknowledge);
     console.log("startGame requested", {
       player: currentPlayer?.name,
       lobby: playerLobby?.id,
@@ -272,7 +284,8 @@ io.on("connection", (client) => {
   });
 
   client.on("gameAction", (payload = {}, acknowledge = () => {}) => {
-    const { action, ...info } = payload;
+    const { action, ...info } = objectPayload(payload);
+    acknowledge = acknowledgement(acknowledge);
     let acknowledged = false;
 
     const accept = () => {
@@ -413,8 +426,11 @@ io.on("connection", (client) => {
           break;
         }
 
-        if (currentPlayer.role.name !== "crew") {
-          reject("INVALID_ROLE", "Только оперативники могут начинать задания.");
+        if (
+          currentPlayer.role.name !== "crew" &&
+          currentPlayer.role.name !== "impostor"
+        ) {
+          reject("INVALID_ROLE", "Роль игрока ещё не определена.");
           break;
         }
 
@@ -597,7 +613,8 @@ io.on("connection", (client) => {
     playerLobby.disconnectPlayer(currentPlayer.color);
   });
 
-  client.on("devSetLobby", ({ lobby }) => {
+  client.on("devSetLobby", (payload = {}) => {
+    const { lobby } = objectPayload(payload);
     if (!config.devMode) {
       client.emit("error", { error: "Действия разработчика отключены." });
       return;
@@ -613,6 +630,8 @@ io.on("connection", (client) => {
     }
 
     console.debug(`DEV: lobby`);
+
+    if (lobby == null || typeof lobby !== "object") return;
 
     for (const key of Object.keys(playerLobby)) {
       if (lobby[key] !== undefined) {
@@ -639,17 +658,24 @@ io.on("connection", (client) => {
       return;
     }
 
-    currentPlayer.assignTasks();
+    currentPlayer.assignTasks(playerLobby.activities);
     playerLobby.synchronize();
   });
 
-  client.on("restartLobby", () => {
-    throw Error("not implemented");
+  client.on("restartLobby", (acknowledge = () => {}) => {
+    if (typeof acknowledge === "function") {
+      acknowledge({
+        success: false,
+        message: "Перезапуск лобби этой командой не поддерживается.",
+      });
+    }
   });
 
   client.on(
     "hostAuthenticate",
-    ({ gameInfo } = {}, acknowledge = () => {}) => {
+    (payload = {}, acknowledge = () => {}) => {
+      const { gameInfo } = objectPayload(payload);
+      acknowledge = acknowledgement(acknowledge);
       const lobby = getLobby(gameInfo?.lobbyId);
       const player = lobby?.players?.[gameInfo?.color];
       const isCreatorSession =
@@ -676,7 +702,9 @@ io.on("connection", (client) => {
     }
   );
 
-  client.on("adminAuthenticate", ({ secret } = {}, acknowledge = () => {}) => {
+  client.on("adminAuthenticate", (payload = {}, acknowledge = () => {}) => {
+    const { secret } = objectPayload(payload);
+    acknowledge = acknowledgement(acknowledge);
     if (!config.adminSecret) {
       acknowledge({ success: false, message: "Панель ведущего отключена. Настройте ADMIN_SECRET." });
       return;
@@ -691,6 +719,7 @@ io.on("connection", (client) => {
   });
 
   client.on("adminRefresh", (acknowledge = () => {}) => {
+    acknowledge = acknowledgement(acknowledge);
     if (!client.data.isAdmin && !client.data.hostLobbyId) {
       acknowledge({ success: false, message: "Требуется вход в панель ведущего." });
       return;
@@ -707,7 +736,9 @@ io.on("connection", (client) => {
     client.data.hostLobbyId = null;
   });
 
-  client.on("adminAction", ({ lobbyId, action, ...info } = {}, acknowledge = () => {}) => {
+  client.on("adminAction", (payload = {}, acknowledge = () => {}) => {
+    const { lobbyId, action, ...info } = objectPayload(payload);
+    acknowledge = acknowledgement(acknowledge);
     if (!canManageLobby(lobbyId)) {
       acknowledge({ success: false, message: "Нет прав на управление этим лобби." });
       return;
@@ -785,9 +816,9 @@ io.on("connection", (client) => {
   });
 });
 
-console.debug(`Listening on http://localhost:${config.port}`);
-
-server.listen(config.port);
+server.listen(config.port, () => {
+  console.debug(`Listening on http://localhost:${config.port}`);
+});
 
 function flushAndExit() {
   flushLobbiesToDisk();
