@@ -10,6 +10,7 @@
   import { language } from "$lib/i18n";
 
   type ScanKind = "meeting" | "task" | "player" | "firewall" | "unknown";
+  type ScanSource = "qr" | "nfc" | null;
 
   type PendingAction =
     | {
@@ -72,11 +73,13 @@
   let tag = "";
   let kind: ScanKind = "unknown";
   let value = "";
+  let scanSource: ScanSource = null;
 
   let loading = true;
   let sessionReady = false;
   let error = "";
   let successMessage = "";
+  let preflightRecorded = false;
 
   let pendingAction: PendingAction | null = null;
   let actionInProgress = false;
@@ -86,18 +89,22 @@
 
   $: if ($language !== renderedLanguage) {
     renderedLanguage = $language;
-    if (sessionReady && !loading && !actionInProgress) prepareScanAction();
+    if (sessionReady && !loading && !actionInProgress && !preflightRecorded)
+      prepareScanAction();
   }
 
     onMount(async () => {
     socket = getSocketIO();
 
     tag = $page.url.searchParams.get("tag") || "";
+    const source = $page.url.searchParams.get("source");
+    scanSource = source === "qr" || source === "nfc" ? source : null;
     parseTag();
 
     if ($lobbyStore != null && $playerStore != null) {
         sessionReady = true;
         loading = false;
+        if (await recordPreflightCheck()) return;
         prepareScanAction();
         return;
     }
@@ -119,8 +126,52 @@
         return;
     }
 
+    if (await recordPreflightCheck()) return;
     prepareScanAction();
     });
+
+  function recordPreflightCheck(): Promise<boolean> {
+    if (scanSource == null || $lobbyStore == null || $playerStore == null) {
+      return Promise.resolve(false);
+    }
+
+    const isPregame = ["settingRooms", "inLobby"].includes(
+      $lobbyStore.status.state
+    );
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeout: number | null = null;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (timeout != null) window.clearTimeout(timeout);
+        resolve(value);
+      };
+      timeout = window.setTimeout(() => finish(false), 1600);
+
+      socket.emit(
+        "preflightCheck",
+        { tag, method: scanSource },
+        ({ success }: { success: boolean }) => {
+          if (success && isPregame) {
+            preflightRecorded = true;
+            error = "";
+            pendingAction = null;
+            successMessage = bi(
+              `${scanSource === "qr" ? "QR-код" : "NFC-метка"} отмечен в панели ведущего.`,
+              `${scanSource === "qr" ? "QR code" : "NFC tag"} was recorded in the host panel.`
+            );
+            finish(true);
+            return;
+          }
+          finish(false);
+        }
+      );
+
+      if (!isPregame) finish(false);
+    });
+  }
 
   function parseTag() {
     if (tag === "meeting") {
@@ -632,19 +683,25 @@
     }
   }
 
-    function cancelAction() {
+  function cancelAction() {
     if ($lobbyStore != null && $playerStore != null) {
-        if ($playerStore.status === "alive") {
+      if ($lobbyStore.status.state === "settingRooms") {
+        gotoReplace(
+          $playerStore.name === $lobbyStore.creator ? "/setuprooms" : "/lobby"
+        );
+      } else if ($lobbyStore.status.state === "inLobby") {
+        gotoReplace("/lobby");
+      } else if ($playerStore.status === "alive") {
         gotoReplace("/game");
-        } else if ($playerStore.status === "dead") {
+      } else if ($playerStore.status === "dead") {
         gotoReplace("/killed");
-        } else {
+      } else {
         gotoReplace("/dead");
-        }
+      }
     } else {
-        gotoReplace("/");
+      gotoReplace("/");
     }
-    }
+  }
 
   function getTaskNumberFromTag(taskTag: string): number | null {
     const taskMap: Record<string, number> = {
@@ -706,6 +763,16 @@
         <p class="eyebrow">{bi("Метка распознана", "Tag recognized")}</p>
         <h1>{bi("Обработка…", "Processing…")}</h1>
         <p class="muted">{bi("Проверка состояния игры.", "Checking game state.")}</p>
+    </section>
+  {:else if preflightRecorded}
+    <section class="scan-card success-card">
+      <p class="eyebrow">{bi("Проверка площадки", "Venue check")}</p>
+      <h1>{bi("Точка работает", "Point verified")}</h1>
+      <p class="muted">{successMessage}</p>
+      <p class="tag-value">{tag}</p>
+      <div class="actions">
+        <MainButton on:click={cancelAction}>{bi("Вернуться в лобби", "Return to lobby")}</MainButton>
+      </div>
     </section>
   {:else if error}
     <section class="scan-card error-card">
@@ -788,6 +855,19 @@
   .error-card {
     border-color: rgba(248, 113, 113, 0.35);
     background: rgba(127, 29, 29, 0.22);
+  }
+
+  .success-card {
+    border-color: rgba(74, 222, 128, 0.42);
+    background: rgba(20, 83, 45, 0.24);
+  }
+
+  .tag-value {
+    margin: 14px 0 0;
+    color: #86efac;
+    font-size: 12px;
+    font-weight: 900;
+    overflow-wrap: anywhere;
   }
 
   .eyebrow {

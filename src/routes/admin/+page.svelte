@@ -7,6 +7,7 @@
   import type { Socket } from "socket.io-client";
   import { language, localizeGameReason, localizeServerMessage } from "$lib/i18n";
   import { clearTestMinigame, startTestMinigame } from "$lib/testMinigame";
+  import VenuePreflight from "$lib/VenuePreflight.svelte";
 
   type AuthMode = "host" | "global" | null;
   type StoredGameInfo = {
@@ -26,6 +27,7 @@
   let selectedLobbyId = "";
   let hostSession: StoredGameInfo | null = null;
   let runningAction = "";
+  let dashboardTab: "control" | "preflight" = "control";
   const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   const testMinigames = [
     { id: 0, ru: "Последовательность", en: "Sequence" },
@@ -295,6 +297,18 @@
     );
   }
 
+  function applyVenueFromPreflight(
+    event: CustomEvent<{ activities: Record<string, unknown> }>
+  ) {
+    runAction("applyVenue", { activities: event.detail.activities });
+  }
+
+  function markPreflightCheck(
+    event: CustomEvent<{ tag: string; method: "qr" | "nfc" }>
+  ) {
+    runAction("markPreflightCheck", event.detail);
+  }
+
   function statusLabel(status: any) {
     const labels: Record<string, [string, string]> = {
       settingRooms: ["Настройка площадки", "Venue setup"],
@@ -429,6 +443,8 @@
       player_sync_completed: ["завершение синхронизации", "sync completed"],
       player_sync_expired: ["запрос истёк", "sync expired"],
       player_sync_cancelled: ["отмена синхронизации", "sync cancelled"],
+      venue_configured: ["площадка", "venue"],
+      preflight_check: ["проверка площадки", "venue check"],
     };
     return labels[type] ? bi(...labels[type]) : bi("событие", "event");
   }
@@ -449,6 +465,7 @@
       "Лобби восстановлено после перезапуска сервера":
         "Lobby restored after server restart",
       "Запрос синхронизации отменён": "Synchronization request cancelled",
+      "Проверки площадки сброшены ведущим": "Venue checks reset by the host",
     };
     if (exact[message]) return exact[message];
 
@@ -479,6 +496,9 @@
       .replace(/^Тестовая площадка подготовлена, добавлено симуляций: (\d+)$/, "Test venue prepared; simulations added: $1")
       .replace(/^Добавлено тестовых игроков: (\d+)$/, "Simulated players added: $1")
       .replace(/^Удалено тестовых игроков: (\d+)$/, "Simulated players removed: $1")
+      .replace(/^Площадка настроена: (\d+) точек$/, "Venue configured: $1 points")
+      .replace(/^QR проверен: (.+)$/, "QR verified: $1")
+      .replace(/^NFC проверен: (.+)$/, "NFC verified: $1")
       .replace(/^Экстренное собрание созвано игроком (.+)$/, "Emergency meeting called by $1")
       .replace(/^Собрание по найденному телу созвано игроком (.+)$/, "Body meeting called by $1")
       .replace(/^Победили оперативники\. (.+)$/, (_, reason) => `Operatives won. ${localizeGameReason(reason)}`)
@@ -569,7 +589,51 @@
     {#if error}<div class="error-banner">{localizeServerMessage(error, $language)}</div>{/if}
     {#if notice}<div class="notice-banner">{localizeServerMessage(notice, $language)}</div>{/if}
 
-    <div class="dashboard-grid">
+    <nav class="dashboard-tabs" aria-label={bi("Разделы панели", "Panel sections")}>
+      <div class="tab-buttons">
+        <button type="button" class:active={dashboardTab === "control"} aria-pressed={dashboardTab === "control"} on:click={() => (dashboardTab = "control")}>
+          {bi("Управление матчем", "Match control")}
+        </button>
+        <button type="button" class:active={dashboardTab === "preflight"} aria-pressed={dashboardTab === "preflight"} on:click={() => (dashboardTab = "preflight")}>
+          {bi("Подготовка площадки", "Venue preflight")}
+        </button>
+      </div>
+      {#if authMode === "global" && lobbies.length > 1}
+        <label class="tab-lobby-picker">
+          <span>{bi("Лобби", "Lobby")}</span>
+          <select bind:value={selectedLobbyId}>
+            {#each lobbies as lobby}
+              <option value={lobby.id}>{lobby.creator} · {lobby.id.slice(0, 8)}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+    </nav>
+
+    {#if dashboardTab === "preflight"}
+      {#if selectedLobby}
+        <div class="preflight-content">
+          <VenuePreflight
+            lobby={selectedLobby}
+            players={selectedPlayers}
+            on:applyVenue={applyVenueFromPreflight}
+            on:mark={markPreflightCheck}
+            on:clear={() =>
+              runAction(
+                "clearPreflightChecks",
+                {},
+                bi("Сбросить все отметки QR и NFC?", "Reset every QR and NFC check?")
+              )}
+          />
+        </div>
+      {:else}
+        <section class="empty-state preflight-content">
+          <h2>{bi("Активных лобби нет", "No active lobbies")}</h2>
+          <p>{bi("Создайте игру, чтобы начать проверку площадки.", "Create a game to start venue preflight.")}</p>
+        </section>
+      {/if}
+    {:else}
+      <div class="dashboard-grid">
       {#if authMode === "global"}
         <aside class="lobby-list">
           <h2>{bi("Активные лобби", "Active lobbies")}</h2>
@@ -930,7 +994,8 @@
           <p>{bi("Создайте игру, после чего она появится здесь автоматически.", "Create a game and it will appear here automatically.")}</p>
         </section>
       {/if}
-    </div>
+      </div>
+    {/if}
   {/if}
 </main>
 
@@ -1141,6 +1206,60 @@
     display: flex;
     gap: 8px;
     align-items: center;
+  }
+
+  .dashboard-tabs,
+  .preflight-content {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto 14px;
+  }
+
+  .dashboard-tabs {
+    padding: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    background: rgba(12, 12, 12, 0.96);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .tab-buttons {
+    min-width: 0;
+    display: flex;
+    gap: 6px;
+  }
+
+  .dashboard-tabs button {
+    border-color: transparent;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.58);
+  }
+
+  .dashboard-tabs button.active {
+    border-color: rgba(74, 222, 128, 0.45);
+    background: rgba(22, 101, 52, 0.3);
+    color: #bbf7d0;
+  }
+
+  .tab-lobby-picker {
+    min-width: min(100%, 260px);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .tab-lobby-picker span {
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 11px;
+    font-weight: 850;
+  }
+
+  .tab-lobby-picker select {
+    width: 100%;
+    padding: 8px;
   }
 
   .mode-badge,
@@ -1556,6 +1675,15 @@
       flex-wrap: wrap;
     }
 
+    .dashboard-tabs {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .tab-buttons button {
+      flex: 1;
+    }
+
     .dashboard-grid {
       grid-template-columns: 1fr;
     }
@@ -1580,6 +1708,11 @@
   }
 
   @media (max-width: 580px) {
+    .tab-buttons {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
     .topbar-actions button {
       flex: 1;
     }

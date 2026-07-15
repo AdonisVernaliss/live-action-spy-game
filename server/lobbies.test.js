@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Lobby } from "./lobbies.js";
 import { Player, playerNameValid } from "./player.js";
-import { NFC_ACTIVITIES, TEST_MODE_TIMERS } from "./consts.js";
+import {
+  NFC_ACTIVITIES,
+  NFC_ACTIVITY_TAGS,
+  TEST_MODE_TIMERS,
+} from "./consts.js";
 
 function makePlayer(color, role) {
   const player = new Player({
@@ -219,6 +223,66 @@ test("cycling tasks selects real task numbers outside the previous batch", () =>
     [3, 4, 5]
   );
   assert.ok(player.tasks.every((task) => task.description.includes("Room")));
+});
+
+test("venue setup normalizes rooms and rejects malformed imports", () => {
+  const host = makePlayer("green", { name: "undecided" });
+  const lobby = makeLobby([host], { state: "settingRooms", readyPlayers: {} });
+  const activities = Object.fromEntries(
+    NFC_ACTIVITIES.map((name, index) => [
+      name,
+      { id: 999, name: "untrusted", room: `  Room ${index + 1}  ` },
+    ])
+  );
+
+  const malformed = structuredClone(activities);
+  malformed.meeting.room = 150;
+  assert.equal(lobby.setActivities(malformed)[0], false);
+  assert.equal(lobby.status.state, "settingRooms");
+  assert.equal(lobby.activities, null);
+
+  assert.deepEqual(lobby.setActivities(activities), [true]);
+  assert.equal(lobby.status.state, "inLobby");
+  assert.deepEqual(lobby.activities.meeting, {
+    id: 1,
+    name: "meeting",
+    room: "Room 1",
+  });
+  lobby.destroy();
+});
+
+test("every physical activity has one unique stable scan tag", () => {
+  assert.deepEqual(Object.keys(NFC_ACTIVITY_TAGS), NFC_ACTIVITIES);
+  assert.equal(
+    new Set(Object.values(NFC_ACTIVITY_TAGS)).size,
+    NFC_ACTIVITIES.length
+  );
+});
+
+test("preflight checks accept known QR and NFC tags only", () => {
+  const host = makePlayer("green", { name: "undecided" });
+  const lobby = makeLobby([host], { state: "inLobby", readyPlayers: {} });
+
+  assert.equal(
+    lobby.recordPreflightCheck(NFC_ACTIVITY_TAGS.wiretap1, "qr", host)[0],
+    true
+  );
+  assert.equal(
+    lobby.recordPreflightCheck("player:green", "nfc", host)[0],
+    true
+  );
+  assert.equal(lobby.recordPreflightCheck("task:unknown", "qr", host)[0], false);
+  assert.equal(
+    lobby.recordPreflightCheck(NFC_ACTIVITY_TAGS.meeting, "camera", host)[0],
+    false
+  );
+
+  const checks = lobby.serializeAdmin().preflightChecks;
+  assert.equal(checks[NFC_ACTIVITY_TAGS.wiretap1].qr.playerColor, "green");
+  assert.equal(checks["player:green"].nfc.playerName, host.name);
+  assert.deepEqual(lobby.clearPreflightChecks(), [true]);
+  assert.deepEqual(lobby.serializeAdmin().preflightChecks, {});
+  lobby.destroy();
 });
 
 test("firewall sabotage requires an impostor and both matching terminals", () => {

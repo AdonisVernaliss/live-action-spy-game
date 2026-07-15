@@ -855,6 +855,8 @@ const serverMessagesEn: Record<string, string> = {
     "This player is not an available body to report.",
   "Этот ник уже используется. Продолжите сохранённую сессию или выберите другой ник.":
     "This nickname is already in use. Continue the saved session or choose another nickname.",
+  "Неизвестная точка проверки площадки": "Unknown venue preflight point.",
+  "Неизвестный способ проверки площадки": "Unknown venue preflight method.",
 };
 
 export function localizeServerMessage(

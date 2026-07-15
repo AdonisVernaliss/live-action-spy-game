@@ -60,7 +60,7 @@ The repository is named `live-action-spy-game`; the public game title remains **
 - Mandatory mutual player scanning before personal tasks unlock.
 - Covert eliminations hidden inside a normal 15-second synchronization.
 - Emergency meetings, body reports, voting, ghost mode, sabotage, and two-team victory conditions.
-- A protected host panel with pause, recovery, diagnostics, test tools, and manual match controls.
+- A protected host panel with venue preflight, pause, recovery, diagnostics, test tools, and manual match controls.
 - Runtime lobby snapshots for recovery after an accidental server restart.
 - A conservative service worker that caches the application shell without caching Socket.IO or live match state.
 
@@ -214,6 +214,8 @@ Previously saved venue templates are retired automatically when this privacy-saf
 
 Open `/adminlinks` after the public hostname and venue are ready. It generates the complete URL and QR code for every activity point and player color.
 
+The QR URL includes `source=qr`, while the URL intended for an NFC NDEF record includes `source=nfc`. Both open the same `/scan` route and trigger the same game action. The source marker only lets the host preflight panel record which physical method was tested.
+
 ## NFC and QR
 
 NFC and QR are two entry methods for the same route:
@@ -238,6 +240,9 @@ The lobby creator can open `/admin` through the saved creator session. A separat
 The panel provides:
 
 - live lobby, phase, player, connection, role, task, cooldown, and sabotage status;
+- a venue-preflight tab with QR/NFC coverage, player connectivity, HTTPS, hostname, and Wake Lock diagnostics;
+- automatic point verification when a connected player scans a generated QR or NFC link before the match;
+- manual verification fallback plus venue JSON import and export;
 - pause and resume with server-side timer freezing;
 - emergency sabotage stop;
 - controlled phase advancement and reset-to-lobby;
@@ -450,6 +455,7 @@ The server tests cover critical multiplayer rules including:
 - body reports;
 - host-only participation rules;
 - pause and lobby persistence behavior.
+- venue import validation, unique physical tags, and QR/NFC preflight persistence.
 
 Automated checks cannot verify NFC antenna placement, camera focus, browser permissions, Wi-Fi coverage, or real-world responsive layout. Those require a physical multi-device pass.
 
@@ -504,7 +510,9 @@ live-action-spy-game/
 - [ ] Build and start the production server.
 - [ ] Start the stable HTTPS tunnel.
 - [ ] Confirm that `/admin`, `/adminlinks`, and the home page open.
+- [ ] Open **Venue preflight** in `/admin` and clear old verification marks.
 - [ ] Walk through every task point with NFC and QR.
+- [ ] Confirm that the preflight panel records every QR point; NFC is optional only when QR will be the planned fallback.
 - [ ] Test both firewall terminals.
 - [ ] Test two-way player synchronization with two real phones.
 - [ ] Check the meeting point and body-report flow.

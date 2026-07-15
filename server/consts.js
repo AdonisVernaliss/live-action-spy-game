@@ -50,6 +50,26 @@ export const NFC_ACTIVITIES = [
   "powergrid",
 ];
 
+// Stable physical tag values. Keep these separate from activity names because
+// several physical points may launch the same minigame (wiretap 1/2/3).
+export const NFC_ACTIVITY_TAGS = Object.freeze({
+  meeting: "meeting",
+  simonsays: "task:simonsays",
+  wiretap1: "task:wiretap1",
+  wiretap2: "task:wiretap2",
+  wiretap3: "task:wiretap3",
+  passwordcrack: "task:passwordcrack",
+  bitcoinmine: "task:bitcoinmine",
+  killthevirus: "task:killthevirus",
+  firewallbutton1: "firewall:0",
+  firewallbutton2: "firewall:1",
+  sumtohundred: "task:sumtohundred",
+  destroyevidence: "task:destroyevidence",
+  packetrouting: "task:packetrouting",
+  accesslog: "task:accesslog",
+  powergrid: "task:powergrid",
+});
+
 export const TASKS = [
   {
     name: "simonsays",

@@ -238,6 +238,36 @@ test("production HTTP routes and full Socket.IO session flow stay operational", 
   });
   assert.equal(hostAuthentication.success, true);
 
+  const preflight = await emitAck(guest, "preflightCheck", {
+    tag: "task:wiretap1",
+    method: "qr",
+  });
+  assert.equal(preflight.success, true);
+  assert.equal(
+    (await emitAck(host, "adminRefresh")).lobbies[0].preflightChecks[
+      "task:wiretap1"
+    ].qr.playerName,
+    "Guest Тест"
+  );
+  assert.equal(
+    (
+      await emitAck(guest, "preflightCheck", {
+        tag: "task:unknown",
+        method: "qr",
+      })
+    ).success,
+    false
+  );
+  assert.equal(
+    (
+      await emitAck(host, "adminAction", {
+        lobbyId: hostSession.lobby.id,
+        action: "clearPreflightChecks",
+      })
+    ).success,
+    true
+  );
+
   assert.equal(
     (
       await emitAck(host, "adminAction", {
@@ -456,6 +486,15 @@ test("lobby state survives a graceful production server restart", async () => {
       "Persistent Host",
       false
     );
+    assert.equal(
+      (
+        await emitAck(creatorSocket, "preflightCheck", {
+          tag: "meeting",
+          method: "nfc",
+        })
+      ).success,
+      true
+    );
     creatorSocket.disconnect();
 
     await stopServer(processUnderTest);
@@ -475,6 +514,7 @@ test("lobby state survives a graceful production server restart", async () => {
     assert.equal(authentication.success, true);
     assert.equal(authentication.lobbies.length, 1);
     assert.equal(authentication.lobbies[0].creator, "Persistent Host");
+    assert.ok(authentication.lobbies[0].preflightChecks.meeting.nfc.checkedAt);
 
     const restoredCreator = await connectSocket(persistenceUrl);
     const restored = waitForEvent(restoredCreator, "reconnected");

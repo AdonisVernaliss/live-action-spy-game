@@ -9,17 +9,20 @@
 
   let canvas: HTMLCanvasElement;
 
-  $: scanUrl = baseUrl
-    ? `${baseUrl}/scan?tag=${encodeURIComponent(tag)}`
+  $: qrUrl = baseUrl
+    ? `${baseUrl}/scan?tag=${encodeURIComponent(tag)}&source=qr`
+    : "";
+  $: nfcUrl = baseUrl
+    ? `${baseUrl}/scan?tag=${encodeURIComponent(tag)}&source=nfc`
     : "";
 
-  $: if (canvas && scanUrl) {
-    QRCode.toCanvas(canvas, scanUrl, { width: 220, margin: 2 });
+  $: if (canvas && qrUrl) {
+    QRCode.toCanvas(canvas, qrUrl, { width: 220, margin: 2 });
   }
 
-  async function copyLink() {
-    if (!scanUrl) return;
-    await navigator.clipboard.writeText(scanUrl);
+  async function copyLink(link: string) {
+    if (!link) return;
+    await navigator.clipboard.writeText(link);
   }
 </script>
 
@@ -32,11 +35,23 @@
 
   <canvas bind:this={canvas} aria-label={`${$language === "en" ? "QR code" : "QR-код"}: ${label}`} />
 
-  <code>{scanUrl}</code>
+  <div class="link-block">
+    <span>{$language === "en" ? "QR URL" : "Ссылка QR"}</span>
+    <code>{qrUrl}</code>
+  </div>
+  <div class="link-block">
+    <span>{$language === "en" ? "Write this URL to NFC" : "Запишите эту ссылку в NFC"}</span>
+    <code>{nfcUrl}</code>
+  </div>
 
-  <button type="button" on:click={copyLink}>
-    {$language === "en" ? "Copy link" : "Копировать ссылку"}
-  </button>
+  <div class="copy-actions">
+    <button type="button" on:click={() => copyLink(qrUrl)}>
+      {$language === "en" ? "Copy QR" : "Копировать QR"}
+    </button>
+    <button type="button" on:click={() => copyLink(nfcUrl)}>
+      {$language === "en" ? "Copy NFC" : "Копировать NFC"}
+    </button>
+  </div>
 </article>
 
 <style>
@@ -90,6 +105,25 @@
     overflow-wrap: anywhere;
   }
 
+  .link-block {
+    margin-top: 8px;
+  }
+
+  .link-block span {
+    display: block;
+    margin-bottom: 3px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .copy-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+
   button {
     width: 100%;
     margin-top: 12px;
@@ -124,7 +158,8 @@
     }
 
     code,
-    button {
+    .link-block span,
+    .copy-actions {
       display: none;
     }
   }

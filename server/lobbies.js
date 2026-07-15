@@ -9,6 +9,7 @@ import {
   MEETING_BUTTON_CD,
   MEETING_TIME,
   NFC_ACTIVITIES,
+  NFC_ACTIVITY_TAGS,
   PLAYER_SYNC_DURATION_MS,
   PLAYER_SYNC_REQUEST_TIMEOUT_MS,
   PLAYER_COLORS,
@@ -35,6 +36,7 @@ import {
 
 // Mapping of lobbyId -> lobby
 const lobbies = {};
+const PREFLIGHT_ACTIVITY_TAGS = new Set(Object.values(NFC_ACTIVITY_TAGS));
 
 export class Lobby {
   constructor({
@@ -61,6 +63,7 @@ export class Lobby {
     this._phaseInterval = null;
     this._virusScanActiveUntil = 0;
     this._virusScanTargets = new Set();
+    this._preflightChecks = {};
     this._playerSyncRequests = new Map();
     this._playerSyncRequestTimers = new Map();
     this._playerSyncSessions = new Map();
@@ -815,9 +818,69 @@ export class Lobby {
   setActivities(activities) {
     if (this.status.state !== "settingRooms")
       return [false, "Настройка площадки уже завершена"];
-    this.activities = activities;
+
+    if (activities == null || typeof activities !== "object") {
+      return [false, "Конфигурация площадки отсутствует или повреждена."];
+    }
+
+    const normalizedActivities = {};
+    for (const [index, name] of NFC_ACTIVITIES.entries()) {
+      const rawRoom = activities[name]?.room;
+      const room = typeof rawRoom === "string" ? rawRoom.trim() : "";
+      if (room.length < 1 || room.length > 80) {
+        return [false, `Локация для ${name} не указана или слишком длинная.`];
+      }
+      normalizedActivities[name] = { id: index + 1, name, room };
+    }
+
+    this.activities = normalizedActivities;
+    this._preflightChecks = {};
     this.status = { state: "inLobby", readyPlayers: {} };
+    this.recordEvent(
+      "venue_configured",
+      `Площадка настроена: ${NFC_ACTIVITIES.length} точек`
+    );
     this.synchronize();
+    return [true];
+  }
+
+  recordPreflightCheck(tag, method, player) {
+    const isActivityTag =
+      typeof tag === "string" && PREFLIGHT_ACTIVITY_TAGS.has(tag);
+    const isPlayerTag =
+      typeof tag === "string" &&
+      tag.startsWith("player:") &&
+      PLAYER_COLORS.includes(tag.slice("player:".length));
+
+    if (!isActivityTag && !isPlayerTag) {
+      return [false, "Неизвестная точка проверки площадки"];
+    }
+    if (method !== "qr" && method !== "nfc") {
+      return [false, "Неизвестный способ проверки площадки"];
+    }
+
+    const checkedAt = new Date().toISOString();
+    const current = this._preflightChecks[tag] ?? {};
+    current[method] = {
+      checkedAt,
+      playerColor: player?.color ?? null,
+      playerName: player?.name ?? null,
+    };
+    this._preflightChecks[tag] = current;
+    this.recordEvent(
+      "preflight_check",
+      `${method === "qr" ? "QR" : "NFC"} проверен: ${tag}`
+    );
+    broadcastAdminSnapshot();
+    scheduleLobbiesPersistence();
+    return [true, { tag, method, checkedAt }];
+  }
+
+  clearPreflightChecks() {
+    this._preflightChecks = {};
+    this.recordEvent("preflight_check", "Проверки площадки сброшены ведущим");
+    broadcastAdminSnapshot();
+    scheduleLobbiesPersistence();
     return [true];
   }
 
@@ -1908,6 +1971,7 @@ export class Lobby {
     return {
       ...this.serialize(),
       eventLog: [...this._eventLog],
+      preflightChecks: structuredClone(this._preflightChecks),
       adminState: {
         virusScanActive: this._virusScanActiveUntil > effectiveNow,
         virusScanSecondsLeft: Math.max(
@@ -1932,6 +1996,7 @@ export class Lobby {
         ])
       ),
       eventLog: [...this._eventLog],
+      preflightChecks: structuredClone(this._preflightChecks),
       lastImpostorColors: [...this._lastImpostorColors],
       virusScanRemainingMs: Math.max(
         0,
@@ -2120,6 +2185,10 @@ function restorePersistedLobbies() {
         ? stored.eventLog.slice(-100)
         : [];
       lobby._virusScanTargets = new Set(stored.virusScanTargets ?? []);
+      lobby._preflightChecks =
+        stored.preflightChecks != null && typeof stored.preflightChecks === "object"
+          ? stored.preflightChecks
+          : {};
       lobby._virusScanActiveUntil =
         Date.now() + Math.max(0, Number(stored.virusScanRemainingMs) || 0);
 

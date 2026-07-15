@@ -20,11 +20,26 @@
   import type { Socket } from "socket.io-client";
   import LanguageToggle from "$lib/LanguageToggle.svelte";
   import { initializeLanguage, language, t } from "$lib/i18n";
+  import {
+    setWakeLockDesired,
+    startWakeLockManager,
+  } from "$lib/wakeLock";
 
   let showDevPanel = false;
   let socket: Socket;
   let reconnectInFlight = false;
   let connectionWasLost = false;
+  let wakeLockManagerReady = false;
+
+  $: shouldKeepScreenAwake =
+    $page.route.id === "/admin" ||
+    ($lobbyStore != null &&
+      !["/", "/join", "/adminlinks", "/gameover"].includes(
+        $page.route.id ?? ""
+      ));
+  $: if (wakeLockManagerReady) {
+    setWakeLockDesired(shouldKeepScreenAwake);
+  }
 
   function debugLog(label: string, data: any = {}) {
     if (
@@ -234,6 +249,9 @@
 
   onMount(() => {
     initializeLanguage();
+    const stopWakeLockManager = startWakeLockManager();
+    wakeLockManagerReady = true;
+    setWakeLockDesired(shouldKeepScreenAwake);
     socket = getSocketIO();
 
     debugLog("onMount", {
@@ -479,6 +497,8 @@
       socket.off("connect", onConnect);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("online", onOnline);
+      wakeLockManagerReady = false;
+      stopWakeLockManager();
     };
   });
 

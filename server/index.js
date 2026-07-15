@@ -9,7 +9,7 @@ import {
 } from "./lobbies.js";
 import { playerNameValid } from "./player.js";
 import { config } from "./config.js";
-import { NFC_ACTIVITIES, TEST_MODE_MIN_PLAYERS } from "./consts.js";
+import { TEST_MODE_MIN_PLAYERS } from "./consts.js";
 
 io.on("connection", (client) => {
   console.debug(`Client connected ${client.id}`);
@@ -167,32 +167,32 @@ io.on("connection", (client) => {
       return;
     }
 
-    if (playerLobby.status.state !== "settingRooms") {
-      acknowledge({ success: false, message: "Площадку можно настроить только до входа в лобби." });
+    const result = playerLobby.setActivities(activities);
+    acknowledge(
+      result[0]
+        ? { success: true }
+        : { success: false, message: result[1] }
+    );
+  });
+
+  client.on("preflightCheck", (payload = {}, acknowledge = () => {}) => {
+    const { tag, method } = objectPayload(payload);
+    acknowledge = acknowledgement(acknowledge);
+    if (currentPlayer == null || playerLobby == null) {
+      acknowledge({ success: false, message: "Активная сессия игрока не найдена. Вернитесь в лобби." });
+      return;
+    }
+    if (isStaleSocket()) {
+      acknowledge({ success: false, message: "Игровая сессия заменена новым подключением." });
       return;
     }
 
-    if (activities == null || typeof activities !== "object") {
-      acknowledge({ success: false, message: "Конфигурация площадки отсутствует или повреждена." });
-      return;
-    }
-
-    const normalizedActivities = {};
-    for (const [index, name] of NFC_ACTIVITIES.entries()) {
-      const rawRoom = activities[name]?.room;
-      const room = typeof rawRoom === "string" ? rawRoom.trim() : "";
-      if (typeof room !== "string" || room.length < 1 || room.length > 80) {
-        acknowledge({
-          success: false,
-          message: `Локация для ${name} не указана или слишком длинная.`,
-        });
-        return;
-      }
-      normalizedActivities[name] = { id: index + 1, name, room };
-    }
-
-    playerLobby.setActivities(normalizedActivities);
-    acknowledge({ success: true });
+    const result = playerLobby.recordPreflightCheck(tag, method, currentPlayer);
+    acknowledge(
+      result[0]
+        ? { success: true, check: result[1] }
+        : { success: false, message: result[1] }
+    );
   });
 
   client.on("startGame", (acknowledge = () => {}) => {
@@ -753,6 +753,15 @@ io.on("connection", (client) => {
     switch (action) {
       case "setPlayerStatus":
         result = lobby.adminSetPlayerStatus(info.color, info.status);
+        break;
+      case "applyVenue":
+        result = lobby.setActivities(info.activities);
+        break;
+      case "markPreflightCheck":
+        result = lobby.recordPreflightCheck(info.tag, info.method, null);
+        break;
+      case "clearPreflightChecks":
+        result = lobby.clearPreflightChecks();
         break;
       case "setPlayerRole":
         result = lobby.adminSetPlayerRole(info.color, info.role);
