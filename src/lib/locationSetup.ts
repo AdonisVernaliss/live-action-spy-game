@@ -1,20 +1,28 @@
-import { NFC_ACTIVITY_TAGS } from "$lib/consts";
+import {
+  BASE_LOCATIONS as SHARED_BASE_LOCATIONS,
+  NFC_ACTIVITY_TAGS,
+  localizeLocationName as localizeSharedLocationName,
+} from "$lib/consts";
 
 export const LOCATION_TEMPLATE_KEY = "protocol150LocationTemplateV3";
 const RETIRED_LOCATION_TEMPLATE_KEYS = ["protocol150LocationTemplate"];
 
-export const BASE_LOCATIONS = [
-  { ru: "Контрольная точка", en: "Checkpoint" },
-  { ru: "Сектор «Альфа»", en: "Alpha Sector" },
-  { ru: "Сектор «Браво»", en: "Bravo Sector" },
-  { ru: "Сектор «Чарли»", en: "Charlie Sector" },
-  { ru: "Сектор «Дельта»", en: "Delta Sector" },
-  { ru: "Узел связи", en: "Communications Hub" },
-  { ru: "Аналитический центр", en: "Analysis Center" },
-  { ru: "Технический блок", en: "Technical Bay" },
-  { ru: "Зона брифинга", en: "Briefing Zone" },
-  { ru: "Наблюдательный пост", en: "Observation Post" },
-] as const;
+export const BASE_LOCATIONS = SHARED_BASE_LOCATIONS;
+
+export function localizeLocationName(name: string, language: "ru" | "en") {
+  return localizeSharedLocationName(name, language) as string;
+}
+
+export function localizeVenueName(name: string, language: "ru" | "en") {
+  if (name === "Основная площадка" || name === "Primary venue") {
+    return language === "en" ? "Primary venue" : "Основная площадка";
+  }
+  const generatedRu = name.match(/^Площадка (.+)$/);
+  if (generatedRu) return language === "en" ? `Venue ${generatedRu[1]}` : name;
+  const generatedEn = name.match(/^Venue (.+)$/);
+  if (generatedEn) return language === "ru" ? `Площадка ${generatedEn[1]}` : name;
+  return name;
+}
 
 export const ACTIVITY_POINTS = [
   { id: 1, name: "meeting", label: "Точка собрания", labelEn: "Meeting point", group: "Основное", groupEn: "Core", tag: NFC_ACTIVITY_TAGS.meeting },

@@ -22,7 +22,8 @@
   let tickTimer: ReturnType<typeof setInterval> | null = null;
   let driftTimer: ReturnType<typeof setInterval> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   $: total = allocation.reduce((sum, value) => sum + Number(value), 0);
   $: sectorsOk = allocation.map(
     (value, index) =>

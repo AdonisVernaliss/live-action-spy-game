@@ -1,12 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import QrCard from "./QrCard.svelte";
-  import { ACTIVITY_POINTS, readLocationTemplate, type LocationTemplate } from "$lib/locationSetup";
+  import {
+    ACTIVITY_POINTS,
+    localizeLocationName,
+    localizeVenueName,
+    readLocationTemplate,
+    type LocationTemplate,
+  } from "$lib/locationSetup";
   import { language } from "$lib/i18n";
 
   let baseUrl = "";
   let template: LocationTemplate | null = null;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   onMount(() => {
     baseUrl = window.location.origin;
@@ -50,7 +57,7 @@
     </p>
 
     {#if template}
-      <p class="template-label">{bi("Площадка", "Venue")}: <strong>{template.name}</strong></p>
+      <p class="template-label">{bi("Площадка", "Venue")}: <strong>{localizeVenueName(template.name, $language)}</strong></p>
     {/if}
 
     <div class="base-box">
@@ -71,7 +78,7 @@
           <QrCard
             label={`${point.id}. ${$language === "en" ? point.labelEn : point.label}`}
             tag={point.tag}
-            location={template?.rooms[point.name] || ""}
+            location={localizeLocationName(template?.rooms[point.name] || "", $language)}
             {baseUrl}
           />
         {/each}

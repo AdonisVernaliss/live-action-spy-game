@@ -83,6 +83,19 @@ test("every literal $t key used by the UI exists in both dictionaries", () => {
   assert.deepEqual(missing, []);
 });
 
+test("inline bilingual helpers react to language changes", () => {
+  const staleHelpers = [];
+
+  for (const file of sourceFiles(path.join(projectRoot, "src"))) {
+    const source = fs.readFileSync(file, "utf8");
+    if (/\bconst\s+bi\s*=/.test(source)) {
+      staleHelpers.push(path.relative(projectRoot, file));
+    }
+  }
+
+  assert.deepEqual(staleHelpers, []);
+});
+
 test("literal server errors have an English translation", () => {
   const serverMessages = findVariable(i18nFile, "serverMessagesEn");
   const serverMessageKeys = objectKeys(serverMessages);

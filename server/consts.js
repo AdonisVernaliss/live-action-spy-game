@@ -70,76 +70,101 @@ export const NFC_ACTIVITY_TAGS = Object.freeze({
   powergrid: "task:powergrid",
 });
 
+export const BASE_LOCATIONS = Object.freeze([
+  Object.freeze({ ru: "Контрольная точка", en: "Checkpoint" }),
+  Object.freeze({ ru: "Сектор «Альфа»", en: "Alpha Sector" }),
+  Object.freeze({ ru: "Сектор «Браво»", en: "Bravo Sector" }),
+  Object.freeze({ ru: "Сектор «Чарли»", en: "Charlie Sector" }),
+  Object.freeze({ ru: "Сектор «Дельта»", en: "Delta Sector" }),
+  Object.freeze({ ru: "Узел связи", en: "Communications Hub" }),
+  Object.freeze({ ru: "Аналитический центр", en: "Analysis Center" }),
+  Object.freeze({ ru: "Технический блок", en: "Technical Bay" }),
+  Object.freeze({ ru: "Зона брифинга", en: "Briefing Zone" }),
+  Object.freeze({ ru: "Наблюдательный пост", en: "Observation Post" }),
+]);
+
+export function localizeLocationName(name, language = "ru") {
+  if (typeof name !== "string") return "";
+  const baseLocation = BASE_LOCATIONS.find(
+    (location) => location.ru === name || location.en === name
+  );
+  return baseLocation?.[language === "en" ? "en" : "ru"] ?? name;
+}
+
+function localizedRoom(activities, activity, language) {
+  return localizeLocationName(activities?.[activity]?.room, language);
+}
+
 export const TASKS = [
   {
     name: "simonsays",
     makeDescription: (activities) =>
-      `Установите связь с тайным корреспондентом: ${activities.simonsays.room}`,
+      `Установите связь с тайным корреспондентом: ${localizedRoom(activities, "simonsays", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Contact the confidential source at: ${activities.simonsays.room}`,
+      `Contact the confidential source at: ${localizedRoom(activities, "simonsays", "en")}`,
   },
   {
     name: "wiretap",
     makeDescription: (activities) =>
-      `Перехватите сигналы в точках: ${activities.wiretap1.room}, ${activities.wiretap2.room} и ${activities.wiretap3.room}`,
+      `Перехватите сигналы в точках: ${localizedRoom(activities, "wiretap1", "ru")}, ${localizedRoom(activities, "wiretap2", "ru")} и ${localizedRoom(activities, "wiretap3", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Intercept signals at: ${activities.wiretap1.room}, ${activities.wiretap2.room}, and ${activities.wiretap3.room}`,
+      `Intercept signals at: ${localizedRoom(activities, "wiretap1", "en")}, ${localizedRoom(activities, "wiretap2", "en")}, and ${localizedRoom(activities, "wiretap3", "en")}`,
   },
   {
     name: "passwordcrack",
     makeDescription: (activities) =>
-      `Взломайте пароль: ${activities.passwordcrack.room}`,
+      `Взломайте пароль: ${localizedRoom(activities, "passwordcrack", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Crack the password at: ${activities.passwordcrack.room}`,
+      `Crack the password at: ${localizedRoom(activities, "passwordcrack", "en")}`,
   },
   {
     name: "bitcoinmine",
     makeDescription: (activities) =>
-      `Откалибруйте хеш-реактор: ${activities.bitcoinmine.room}`,
+      `Откалибруйте хеш-реактор: ${localizedRoom(activities, "bitcoinmine", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Calibrate the hash reactor at: ${activities.bitcoinmine.room}`,
+      `Calibrate the hash reactor at: ${localizedRoom(activities, "bitcoinmine", "en")}`,
   },
   {
     name: "killthevirus",
     makeDescription: (activities) =>
-      `Уничтожьте вирусы: ${activities.killthevirus.room}`,
+      `Уничтожьте вирусы: ${localizedRoom(activities, "killthevirus", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Destroy the viruses at: ${activities.killthevirus.room}`,
+      `Destroy the viruses at: ${localizedRoom(activities, "killthevirus", "en")}`,
   },
   {
     name: "sumtohundred",
     makeDescription: (activities) =>
-      `Выполните вычисления: ${activities.sumtohundred.room}`,
+      `Выполните вычисления: ${localizedRoom(activities, "sumtohundred", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Complete the calculations at: ${activities.sumtohundred.room}`,
+      `Complete the calculations at: ${localizedRoom(activities, "sumtohundred", "en")}`,
   },
   {
     name: "destroyevidence",
     makeDescription: (activities) =>
-      `Уничтожьте улики: ${activities.destroyevidence.room}`,
+      `Уничтожьте улики: ${localizedRoom(activities, "destroyevidence", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Destroy the evidence at: ${activities.destroyevidence.room}`,
+      `Destroy the evidence at: ${localizedRoom(activities, "destroyevidence", "en")}`,
   },
   {
     name: "packetrouting",
     makeDescription: (activities) =>
-      `Восстановите маршрутизацию пакетов: ${activities.packetrouting.room}`,
+      `Восстановите маршрутизацию пакетов: ${localizedRoom(activities, "packetrouting", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Restore packet routing at: ${activities.packetrouting.room}`,
+      `Restore packet routing at: ${localizedRoom(activities, "packetrouting", "en")}`,
   },
   {
     name: "accesslog",
     makeDescription: (activities) =>
-      `Проведите аудит журнала доступа: ${activities.accesslog.room}`,
+      `Проведите аудит журнала доступа: ${localizedRoom(activities, "accesslog", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Audit the access log at: ${activities.accesslog.room}`,
+      `Audit the access log at: ${localizedRoom(activities, "accesslog", "en")}`,
   },
   {
     name: "powergrid",
     makeDescription: (activities) =>
-      `Стабилизируйте энергосеть: ${activities.powergrid.room}`,
+      `Стабилизируйте энергосеть: ${localizedRoom(activities, "powergrid", "ru")}`,
     makeDescriptionEn: (activities) =>
-      `Stabilize the power grid at: ${activities.powergrid.room}`,
+      `Stabilize the power grid at: ${localizedRoom(activities, "powergrid", "en")}`,
   },
 ];
 

@@ -25,7 +25,8 @@
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
   let failed = false;
   let won = false;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   onMount(startGame);
   onDestroy(stopTimer);

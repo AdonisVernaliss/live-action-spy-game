@@ -13,7 +13,8 @@
   let finished = false;
   let interval: ReturnType<typeof setInterval> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   $: errors = values.map((value, index) => Math.abs(value - targets[index]));
   $: signal = Math.max(0, Math.round(100 - errors.reduce((sum, error) => sum + error, 0) * 0.9));

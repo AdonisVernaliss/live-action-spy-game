@@ -28,7 +28,8 @@
   let hostSession: StoredGameInfo | null = null;
   let runningAction = "";
   let dashboardTab: "control" | "preflight" = "control";
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   const testMinigames = [
     { id: 0, ru: "Последовательность", en: "Sequence" },
     { id: 1, ru: "Перехват сигнала", en: "Signal interception" },

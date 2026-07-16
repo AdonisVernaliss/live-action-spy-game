@@ -6,6 +6,8 @@
   import { gotoReplace } from "$lib/util";
   import {
     ACTIVITY_POINTS,
+    localizeLocationName,
+    localizeVenueName,
     makeBaseLocations,
     makeDefaultAssignments,
     readLocationTemplate,
@@ -28,10 +30,19 @@
   let hasSavedTemplate = false;
   let locations: PhysicalLocation[] = makeBaseLocations($language);
   let assignments = makeDefaultAssignments(locations);
+  let renderedLanguage: "ru" | "en" = $language;
 
   $: isCreator = $lobbyStore != null && $playerStore?.name === $lobbyStore.creator;
   $: completedLocations = locations.filter((location) => location.name.trim()).length;
   $: completedAssignments = Object.values(assignments).filter(Boolean).length;
+  $: if ($language !== renderedLanguage) {
+    renderedLanguage = $language;
+    templateName = localizeVenueName(templateName, $language);
+    locations = locations.map((location) => ({
+      ...location,
+      name: localizeLocationName(location.name, $language),
+    }));
+  }
 
   onMount(() => {
     socket = getSocketIO();
@@ -66,8 +77,11 @@
   function loadTemplate() {
     const template = readLocationTemplate();
     if (template == null) return;
-    templateName = template.name;
-    locations = template.locations.map((location) => ({ ...location }));
+    templateName = localizeVenueName(template.name, $language);
+    locations = template.locations.map((location) => ({
+      ...location,
+      name: localizeLocationName(location.name, $language),
+    }));
     assignments = { ...template.assignments };
     error = null;
   }

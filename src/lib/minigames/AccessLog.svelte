@@ -21,7 +21,8 @@
   let failed = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   const ruleText = (text: string[]) => text[$language === "en" ? 1 : 0];
   const feedbackText = () => ({
     correct: bi("Верно", "Correct"),

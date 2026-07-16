@@ -85,7 +85,8 @@
   let actionInProgress = false;
   let renderedLanguage = $language;
 
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   $: if ($language !== renderedLanguage) {
     renderedLanguage = $language;

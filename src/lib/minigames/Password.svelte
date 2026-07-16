@@ -3,7 +3,8 @@
   import { language } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   const emptyscreen = ["_", "_", "_", "_"];
 

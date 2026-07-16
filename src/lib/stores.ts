@@ -1,6 +1,7 @@
 import { derived, writable, type Readable } from "svelte/store";
 import type { Color, Lobby, Player } from "./types";
 import { language, localizeServerMessage } from "./i18n";
+import { localizeLocationName } from "./locationSetup";
 
 export type ConnectionState =
   | "connecting"
@@ -50,8 +51,8 @@ export const notificationStore: Readable<string | null> = derived(
       lobby.status.state !== "gameEnded"
     )
       return currentLanguage === "en"
-        ? `ALERT: firewall breached. Restore it at “${lobby.activities.firewallbutton1.room}” and “${lobby.activities.firewallbutton2.room}”. ${lobby.activeEffects.firewallBreach.countDown}s remaining.`
-        : `ТРЕВОГА: защита взломана. Восстановите её в точках «${lobby.activities.firewallbutton1.room}» и «${lobby.activities.firewallbutton2.room}». Осталось ${lobby.activeEffects.firewallBreach.countDown} сек.`;
+        ? `ALERT: firewall breached. Restore it at “${localizeLocationName(lobby.activities.firewallbutton1.room, "en")}” and “${localizeLocationName(lobby.activities.firewallbutton2.room, "en")}”. ${lobby.activeEffects.firewallBreach.countDown}s remaining.`
+        : `ТРЕВОГА: защита взломана. Восстановите её в точках «${localizeLocationName(lobby.activities.firewallbutton1.room, "ru")}» и «${localizeLocationName(lobby.activities.firewallbutton2.room, "ru")}». Осталось ${lobby.activeEffects.firewallBreach.countDown} сек.`;
     return null;
   }
 );

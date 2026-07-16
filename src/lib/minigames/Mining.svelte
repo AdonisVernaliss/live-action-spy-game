@@ -25,7 +25,8 @@
   let targetElement: HTMLDivElement;
   let cursorElement: HTMLDivElement;
   let lastPressAt = -1000;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   function messageText(
     messageKey: string,

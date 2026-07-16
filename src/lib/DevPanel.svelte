@@ -11,7 +11,8 @@
 
   let io: Socket;
   let playerColor: Color;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   onMount(() => {
     io = getSocketIO();

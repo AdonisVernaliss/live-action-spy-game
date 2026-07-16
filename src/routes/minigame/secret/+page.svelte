@@ -15,7 +15,8 @@
   let sequenceInput = "";
 
   let error = "";
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   function startHold() {
     if (holdInterval != null) return;

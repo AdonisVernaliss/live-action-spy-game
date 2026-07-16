@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount } from "svelte";
   import {
     ACTIVITY_POINTS,
+    localizeLocationName,
     parseLocationTemplate,
     readLocationTemplate,
     storeLocationTemplate,
@@ -36,7 +37,8 @@
   let message = "";
   let importError = "";
   const preflightMethods: PreflightMethod[] = ["qr", "nfc"];
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   onMount(() => {
     origin = window.location.origin;
@@ -54,7 +56,10 @@
     id: point.name,
     tag: point.tag,
     label: $language === "en" ? point.labelEn : point.label,
-    room: lobby?.activities?.[point.name]?.room || "",
+    room: localizeLocationName(
+      lobby?.activities?.[point.name]?.room || "",
+      $language
+    ),
     group: "activity" as const,
   }));
   $: playerRows = realPlayers.map((player) => ({

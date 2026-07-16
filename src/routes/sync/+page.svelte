@@ -5,7 +5,8 @@
   import { gotoReplace } from "$lib/util";
   import { onDestroy, onMount } from "svelte";
 
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   let now = Date.now();
   let mounted = false;

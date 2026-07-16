@@ -3,9 +3,12 @@ import test from "node:test";
 import { Lobby } from "./lobbies.js";
 import { Player, playerNameValid } from "./player.js";
 import {
+  BASE_LOCATIONS,
   NFC_ACTIVITIES,
   NFC_ACTIVITY_TAGS,
+  TASKS,
   TEST_MODE_TIMERS,
+  localizeLocationName,
 } from "./consts.js";
 
 function makePlayer(color, role) {
@@ -223,6 +226,31 @@ test("cycling tasks selects real task numbers outside the previous batch", () =>
     [3, 4, 5]
   );
   assert.ok(player.tasks.every((task) => task.description.includes("Room")));
+});
+
+test("standard venue names and task descriptions follow the selected language", () => {
+  for (const location of BASE_LOCATIONS) {
+    assert.equal(localizeLocationName(location.ru, "en"), location.en);
+    assert.equal(localizeLocationName(location.en, "ru"), location.ru);
+  }
+  assert.equal(localizeLocationName("Custom room", "ru"), "Custom room");
+  assert.equal(localizeLocationName("Своя комната", "en"), "Своя комната");
+
+  const activities = Object.fromEntries(
+    NFC_ACTIVITIES.map((name, index) => [
+      name,
+      {
+        id: index + 1,
+        name,
+        room: index % 2 === 0 ? BASE_LOCATIONS[0].ru : BASE_LOCATIONS[0].en,
+      },
+    ])
+  );
+
+  for (const task of TASKS) {
+    assert.match(task.makeDescription(activities), /Контрольная точка/);
+    assert.match(task.makeDescriptionEn(activities), /Checkpoint/);
+  }
 });
 
 test("venue setup normalizes rooms and rejects malformed imports", () => {

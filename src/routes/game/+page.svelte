@@ -22,8 +22,10 @@
     VIRUS_SCAN_COOLDOWN,
   } from "../../../server/consts";
   import { language, t } from "$lib/i18n";
+  import { localizeLocationName } from "$lib/locationSetup";
 
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
   let mainDiv: HTMLDivElement;
   let impostorDiv: HTMLDivElement;
@@ -321,11 +323,11 @@
                   {name} — {$t("game.action")}:
                   <span class="capitalize">{activityLabel(currentlyDoing.activity)}</span>
                   {currentlyDoing.activity === "task"
-                    ? `in ${
-                        $lobbyStore.activities[
-                          TASKS[currentlyDoing.number].name
-                        ].room
-                      }`
+                    ? `${bi("в", "in")} ${localizeLocationName(
+                        $lobbyStore.activities[TASKS[currentlyDoing.number].name]
+                          .room,
+                        $language
+                      )}`
                     : ""}
                 </div>
               </div>
@@ -373,8 +375,14 @@
               </div>
               <span class="text-gray-400 text-sm"
                 >{$t("game.firewallText", {
-                  room1: $lobbyStore.activities["firewallbutton1"].room,
-                  room2: $lobbyStore.activities["firewallbutton2"].room,
+                  room1: localizeLocationName(
+                    $lobbyStore.activities["firewallbutton1"].room,
+                    $language
+                  ),
+                  room2: localizeLocationName(
+                    $lobbyStore.activities["firewallbutton2"].room,
+                    $language
+                  ),
                   seconds: FIREWALL_FIX_TIME,
                 })}</span
               >

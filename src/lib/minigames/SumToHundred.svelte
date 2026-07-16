@@ -11,7 +11,8 @@
   let message = "";
   let wins = 0;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
-  const bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  let bi = (ru: string, _en: string) => ru;
+  $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   const messageText = () => message === "wrong"
     ? bi("❌ Неверно. Попробуйте снова.", "❌ Incorrect. Try again.")
     : message === "correct" ? bi("Верно.", "Correct.") : "";
