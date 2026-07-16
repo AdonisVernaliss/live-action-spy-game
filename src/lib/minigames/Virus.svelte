@@ -6,6 +6,7 @@
   import { onDestroy, onMount } from "svelte";
 
   type ThreatKind = "normal" | "fast" | "armored" | "stealth";
+  type ToolKind = "quarantine" | "breaker";
   type Threat = {
     id: number;
     cell: number;
@@ -18,9 +19,9 @@
   };
 
   const CELL_COUNT = 12;
-  const TARGET_SCORE = 18;
-  const MAX_BREACHES = 3;
-  const GAME_TIME = 48;
+  const TARGET_SCORE = 22;
+  const MAX_BREACHES = 4;
+  const GAME_TIME = 65;
 
   let threats: Threat[] = [];
   let threatByCell = new Map<number, Threat>();
@@ -28,6 +29,7 @@
   let breaches = 0;
   let falsePositives = 0;
   let combo = 0;
+  let selectedTool: ToolKind = "quarantine";
   let timeLeft = GAME_TIME;
   let now = Date.now();
   let deadline = 0;
@@ -53,6 +55,7 @@
     breaches = 0;
     falsePositives = 0;
     combo = 0;
+    selectedTool = "quarantine";
     timeLeft = GAME_TIME;
     now = Date.now();
     deadline = now + GAME_TIME * 1000;
@@ -136,7 +139,7 @@
         id: nextThreatId++,
         cell: freeCells[Math.floor(Math.random() * freeCells.length)],
         kind,
-        hitsRemaining: kind === "armored" ? 2 : 1,
+        hitsRemaining: 1,
         spawnedAt,
         expiresAt: spawnedAt + lifetime,
         nextMoveAt:
@@ -188,24 +191,19 @@
 
     const threat = threats.find((candidate) => candidate.cell === cell);
     if (!threat) {
-      falsePositives += 1;
-      combo = 0;
-      deadline -= 1500;
-      feedback = bi("Ложное срабатывание: −1,5 секунды", "False positive: −1.5 seconds");
+      applyMistake(
+        bi("Повреждён обычный файл: −1 очко", "Normal file damaged: −1 point")
+      );
       return;
     }
 
-    if (threat.hitsRemaining > 1) {
-      threats = threats.map((candidate) =>
-        candidate.id === threat.id
-          ? {
-              ...candidate,
-              hitsRemaining: candidate.hitsRemaining - 1,
-              expiresAt: candidate.expiresAt + 450,
-            }
-          : candidate
+    const correctTool = threat.kind === "armored" ? "breaker" : "quarantine";
+    if (selectedTool !== correctTool) {
+      applyMistake(
+        threat.kind === "armored"
+          ? bi("Нужен пробой брони: −1 очко", "Armor breaker required: −1 point")
+          : bi("Нужен карантин: −1 очко", "Quarantine required: −1 point")
       );
-      feedback = bi("Оболочка снята — нажмите ещё раз", "Shield removed — tap again");
       return;
     }
 
@@ -217,6 +215,13 @@
       : bi("Угроза изолирована", "Threat quarantined");
 
     if (quarantined >= TARGET_SCORE) winGame();
+  }
+
+  function applyMistake(text: string) {
+    falsePositives += 1;
+    quarantined = Math.max(0, quarantined - 1);
+    combo = 0;
+    feedback = text;
   }
 
   function threatLife(threat: Threat) {
@@ -261,8 +266,8 @@
     <h1>{bi("Карантин сети", "Network quarantine")}</h1>
     <p class="description">
       {bi(
-        "Нажимайте заражённые узлы до истечения шкалы. Быстрые вирусы меняют позицию, защищённым требуется два нажатия, а скрытые угрозы маскируются под обычный пакет. Обычные пакеты не трогайте.",
-        "Tap infected nodes before their meter expires. Fast viruses relocate, armored viruses need two taps, and stealth threats disguise themselves as normal packets. Leave normal packets alone."
+        "Выберите инструмент и удаляйте вирусы до истечения шкалы. Карантин действует на обычные, быстрые и скрытые угрозы; пробой брони — только на защищённые. Обычные файлы не трогайте.",
+        "Choose a tool and remove viruses before their meter expires. Quarantine handles normal, fast, and stealth threats; armor breaker handles armored threats only. Leave normal files alone."
       )}
     </p>
 
@@ -271,6 +276,27 @@
       <div><small>{bi("Прорывы", "Breaches")}</small><strong class:danger={breaches > 0}>{breaches}/{MAX_BREACHES}</strong></div>
       <div><small>{bi("Ошибки", "Mistakes")}</small><strong>{falsePositives}</strong></div>
       <div><small>{bi("Время", "Time")}</small><strong>{timeLeft}s</strong></div>
+    </div>
+
+    <div class="tool-selector" role="group" aria-label={bi("Инструмент", "Tool")}>
+      <button
+        type="button"
+        class:active={selectedTool === "quarantine"}
+        on:click={() => (selectedTool = "quarantine")}
+      >
+        <b>▣</b>
+        <span>{bi("Карантин", "Quarantine")}</span>
+        <small>{bi("вирус / быстрый / скрытый", "normal / fast / stealth")}</small>
+      </button>
+      <button
+        type="button"
+        class:active={selectedTool === "breaker"}
+        on:click={() => (selectedTool = "breaker")}
+      >
+        <b>◆</b>
+        <span>{bi("Пробой брони", "Armor breaker")}</span>
+        <small>{bi("только броня", "armored only")}</small>
+      </button>
     </div>
 
     <div class="scan-grid">
@@ -287,7 +313,7 @@
           class:cloaked
           aria-label={threat
             ? `${kindLabel(threat.kind)} ${cell + 1}`
-            : bi(`Обычный пакет ${cell + 1}`, `Normal packet ${cell + 1}`)}
+            : bi(`Обычный файл ${cell + 1}`, `Normal file ${cell + 1}`)}
           on:pointerdown={(event) => scanCell(event, cell)}
         >
           <span class="node-id">N-{String(cell + 1).padStart(2, "0")}</span>
@@ -298,10 +324,10 @@
           />
           {#if threat && !cloaked}
             <b class="kind">{kindLabel(threat.kind)}</b>
-            {#if threat.hitsRemaining > 1}<i class="shield">×{threat.hitsRemaining}</i>{/if}
+            {#if threat.kind === "armored"}<i class="shield">◆</i>{/if}
             <span class="life"><i style={`width:${threatLife(threat)}%`}></i></span>
           {:else}
-            <b class="safe">{bi("ПАКЕТ", "PACKET")}</b>
+            <b class="safe">{bi("ФАЙЛ", "FILE")}</b>
           {/if}
         </button>
       {/each}
@@ -411,6 +437,52 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: clamp(5px, 1.7vw, 9px);
+  }
+
+  .tool-selector {
+    margin: 0 0 9px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .tool-selector button {
+    min-width: 0;
+    padding: 8px 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1px 7px;
+    align-items: center;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.035);
+    color: rgba(255, 255, 255, 0.7);
+    text-align: left;
+  }
+
+  .tool-selector button.active {
+    border-color: #4ade80;
+    background: rgba(22, 101, 52, 0.35);
+    color: white;
+  }
+
+  .tool-selector button > b {
+    grid-row: 1 / 3;
+    color: #86efac;
+    font-size: 18px;
+  }
+
+  .tool-selector button > span {
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .tool-selector button > small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 7px;
   }
 
   .node {
@@ -617,5 +689,6 @@
     .stats { margin: 8px 0; }
     .terminal { padding-top: 13px; padding-bottom: 10px; }
     .footer-status { min-height: 24px; margin-top: 5px; }
+    .tool-selector button { padding-top: 5px; padding-bottom: 5px; }
   }
 </style>

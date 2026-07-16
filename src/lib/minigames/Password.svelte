@@ -6,9 +6,10 @@
   let bi = (ru: string, _en: string) => ru;
   $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
 
-  const emptyscreen = ["_", "_", "_", "_"];
+  const PASSWORD_LENGTH = 5;
+  const emptyscreen = Array(PASSWORD_LENGTH).fill("_");
 
-  let numericalinput = [0, 0, 0, 0];
+  let numericalinput = Array(PASSWORD_LENGTH).fill(0);
   let buttonlit = [
     false,
     false,
@@ -22,8 +23,8 @@
     false,
   ];
 
-  let right = [false, false, false, false];
-  let almost = [false, false, false, false];
+  let right = Array(PASSWORD_LENGTH).fill(false);
+  let almost = Array(PASSWORD_LENGTH).fill(false);
 
   let inputhistory: number[][] = [];
   let righthistory: boolean[][] = [];
@@ -61,23 +62,16 @@
     current = 0;
     waiting = false;
 
-    numericalinput = [0, 0, 0, 0];
-    right = [false, false, false, false];
-    almost = [false, false, false, false];
+    numericalinput = Array(PASSWORD_LENGTH).fill(0);
+    right = Array(PASSWORD_LENGTH).fill(false);
+    almost = Array(PASSWORD_LENGTH).fill(false);
   }
 
   function resetSequence() {
-    const nextSequence: number[] = [];
-
-    while (nextSequence.length < 4) {
-      const num = Math.floor(Math.random() * 10);
-
-      if (!nextSequence.includes(num)) {
-        nextSequence.push(num);
-      }
-    }
-
-    sequence = nextSequence;
+    sequence = Array.from(
+      { length: PASSWORD_LENGTH },
+      () => Math.floor(Math.random() * 10)
+    );
   }
 
   function scroll() {
@@ -101,8 +95,8 @@
     updateHistory();
 
     waiting = false;
-    right = [false, false, false, false];
-    almost = [false, false, false, false];
+    right = Array(PASSWORD_LENGTH).fill(false);
+    almost = Array(PASSWORD_LENGTH).fill(false);
     current = 0;
 
     if (historylength > 0) {
@@ -115,20 +109,28 @@
     waiting = true;
 
     let success = true;
-    const nextRight = [false, false, false, false];
-    const nextAlmost = [false, false, false, false];
+    const nextRight = Array(PASSWORD_LENGTH).fill(false);
+    const nextAlmost = Array(PASSWORD_LENGTH).fill(false);
+    const remainingDigits = new Map<number, number>();
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < PASSWORD_LENGTH; i++) {
       if (numericalinput[i] === sequence[i]) {
         nextRight[i] = true;
       } else {
         success = false;
+        remainingDigits.set(
+          sequence[i],
+          (remainingDigits.get(sequence[i]) || 0) + 1
+        );
+      }
+    }
 
-        for (let j = 0; j < 4; j++) {
-          if (numericalinput[i] === sequence[j]) {
-            nextAlmost[i] = true;
-          }
-        }
+    for (let i = 0; i < PASSWORD_LENGTH; i++) {
+      if (nextRight[i]) continue;
+      const remaining = remainingDigits.get(numericalinput[i]) || 0;
+      if (remaining > 0) {
+        nextAlmost[i] = true;
+        remainingDigits.set(numericalinput[i], remaining - 1);
       }
     }
 
@@ -156,7 +158,7 @@
     }
 
     if (index === 11) {
-      if (current === 4) {
+      if (current === PASSWORD_LENGTH) {
         processInput();
       }
 
@@ -171,7 +173,7 @@
       buttonlit = buttonlit.slice();
     }, 300);
 
-    if (current < 4) {
+    if (current < PASSWORD_LENGTH) {
       numericalinput[current] = index;
       numericalinput = numericalinput.slice();
       current += 1;
@@ -189,12 +191,12 @@
 <main class="password-page">
   <div class="password-card">
     <div
-      class="grid grid-cols-4 gap-4 mt-4 pb-2 mb-2 h-28 border-b border-gray-400"
+      class="code-grid history-grid mt-4 pb-2 mb-2 h-28 border-b border-gray-400"
       id="scrollback"
     >
       {#if historylength > 0}
         {#each Array(historylength) as _, i}
-          {#each Array(4) as _, j}
+          {#each Array(PASSWORD_LENGTH) as _, j}
             <div
               class="history h-min"
               class:history-right={righthistory[i][j]}
@@ -207,8 +209,8 @@
       {/if}
     </div>
 
-    <div class="grid grid-cols-4 gap-4">
-      {#each Array(4) as _, i}
+    <div class="code-grid">
+      {#each Array(PASSWORD_LENGTH) as _, i}
         <div
           class="screen"
           class:history={waiting}
@@ -289,6 +291,12 @@
 
   .buttonpad {
     height: 40svh;
+  }
+
+  .code-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: clamp(6px, 2.5vw, 14px);
   }
 
   .btn {

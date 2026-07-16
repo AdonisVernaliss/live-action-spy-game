@@ -41,6 +41,7 @@
   function leaveGame() {
     localStorage.removeItem("gameInfo");
     localStorage.removeItem("currentTaskNumber");
+    localStorage.removeItem("currentTaskTag");
     gotoReplace("/");
   }
 

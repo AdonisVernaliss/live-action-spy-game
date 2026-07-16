@@ -196,6 +196,7 @@
       } catch {
         localStorage.removeItem("gameInfo");
         localStorage.removeItem("currentTaskNumber");
+        localStorage.removeItem("currentTaskTag");
         connectionStore.set("connected");
         gotoReplace("/");
         return;
@@ -233,6 +234,7 @@
           connectionStore.set("connected");
           localStorage.removeItem("gameInfo");
           localStorage.removeItem("currentTaskNumber");
+          localStorage.removeItem("currentTaskTag");
           gotoReplace("/");
         }
       }

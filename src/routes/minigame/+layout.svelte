@@ -2,9 +2,17 @@
   import { gotoReplace } from "$lib/util";
   import { language } from "$lib/i18n";
   import { isTestMinigameActive, returnFromTestMinigame } from "$lib/testMinigame";
+  import { page } from "$app/stores";
+  import MinigameBriefing from "$lib/MinigameBriefing.svelte";
+  import { MINIGAME_BRIEFINGS } from "$lib/minigameBriefings";
   import { onMount } from "svelte";
 
   let testRun = false;
+  let acceptedBriefing = "";
+
+  $: briefingKey = $page.url.pathname.split("/").filter(Boolean).at(-1) || "";
+  $: briefing = MINIGAME_BRIEFINGS[briefingKey] || null;
+  $: briefingAccepted = briefing == null || acceptedBriefing === briefingKey;
 
   onMount(() => {
     testRun = isTestMinigameActive();
@@ -23,7 +31,11 @@
         : $language === "en" ? "Cancel task" : "Отменить задание"}</button>
   </div>
   <div class="minigame-stage">
-    <slot />
+    {#if briefingAccepted}
+      <slot />
+    {:else if briefing}
+      <MinigameBriefing {briefing} on:start={() => (acceptedBriefing = briefingKey)} />
+    {/if}
   </div>
 </div>
 

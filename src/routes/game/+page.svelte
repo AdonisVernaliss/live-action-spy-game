@@ -254,6 +254,10 @@
 
                 {#if task.status === "completed"}
                   <span class="text-green-400 ml-1">✓</span>
+                {:else if task.name === "wiretap"}
+                  <span class="text-sky-300 ml-1 font-bold">
+                    ({task.completedCheckpoints?.length || 0}/3)
+                  </span>
                 {/if}
               </button>
             </li>

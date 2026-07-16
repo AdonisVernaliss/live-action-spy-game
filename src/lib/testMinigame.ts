@@ -35,6 +35,7 @@ export function returnFromTestMinigame() {
   clearTestMinigame();
   if (typeof localStorage !== "undefined") {
     localStorage.removeItem("currentTaskNumber");
+    localStorage.removeItem("currentTaskTag");
   }
   gotoReplace("/admin");
 }

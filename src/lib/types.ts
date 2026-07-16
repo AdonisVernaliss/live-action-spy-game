@@ -164,6 +164,7 @@ export type Task = {
   description: string;
   descriptionEn?: string;
   status: "available" | "completed";
+  completedCheckpoints?: string[];
 };
 
 // Game actions taken by players that the frontend needs to communicate to the backend
@@ -194,6 +195,7 @@ export type GameAction =
   | {
     action: "startTask";
     taskNumber: number;
+    taskTag?: string;
   }
   | {
     action: "startFirewallFix";
@@ -202,6 +204,7 @@ export type GameAction =
   | {
     action: "taskCompleted";
     taskNumber: number;
+    taskTag?: string;
   }
   | {
     action: "finishFirewallFix";
@@ -224,7 +227,12 @@ export type GameAction =
   };
 
 export type GameActionResult =
-  | { success: true; action: GameAction["action"] }
+  | {
+      success: true;
+      action: GameAction["action"];
+      taskComplete?: boolean;
+      wiretapProgress?: number;
+    }
   | {
       success: false;
       action: GameAction["action"] | "unknown";

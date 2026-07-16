@@ -367,24 +367,29 @@ test("production HTTP routes and full Socket.IO session flow stay operational", 
   );
 
   const operativeTaskNumber = operative.tasks[0].number;
-  assert.equal(
-    (
-      await emitAck(operativeSocket, "gameAction", {
-        action: "startTask",
-        taskNumber: operativeTaskNumber,
-      })
-    ).success,
-    true
-  );
-  assert.equal(
-    (
-      await emitAck(operativeSocket, "gameAction", {
-        action: "taskCompleted",
-        taskNumber: operativeTaskNumber,
-      })
-    ).success,
-    true
-  );
+  const operativeTaskTags =
+    operativeTaskNumber === 1
+      ? ["wiretap1", "wiretap2", "wiretap3"]
+      : [undefined];
+
+  for (const taskTag of operativeTaskTags) {
+    assert.equal(
+      (
+        await emitAck(operativeSocket, "gameAction", {
+          action: "startTask",
+          taskNumber: operativeTaskNumber,
+          ...(taskTag ? { taskTag } : {}),
+        })
+      ).success,
+      true
+    );
+    const completion = await emitAck(operativeSocket, "gameAction", {
+      action: "taskCompleted",
+      taskNumber: operativeTaskNumber,
+      ...(taskTag ? { taskTag } : {}),
+    });
+    assert.equal(completion.success, true);
+  }
   assert.ok(
     (await emitAck(host, "adminRefresh")).lobbies[0].taskProgression.real >
       progressionBeforeFakeTask

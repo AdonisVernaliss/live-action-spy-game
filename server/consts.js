@@ -70,6 +70,12 @@ export const NFC_ACTIVITY_TAGS = Object.freeze({
   powergrid: "task:powergrid",
 });
 
+export const WIRETAP_CHECKPOINTS = Object.freeze([
+  "wiretap1",
+  "wiretap2",
+  "wiretap3",
+]);
+
 export const BASE_LOCATIONS = Object.freeze([
   Object.freeze({ ru: "Контрольная точка", en: "Checkpoint" }),
   Object.freeze({ ru: "Сектор «Альфа»", en: "Alpha Sector" }),

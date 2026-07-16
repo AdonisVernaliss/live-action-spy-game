@@ -288,10 +288,10 @@ io.on("connection", (client) => {
     acknowledge = acknowledgement(acknowledge);
     let acknowledged = false;
 
-    const accept = () => {
+    const accept = (details = {}) => {
       if (acknowledged) return;
       acknowledged = true;
-      acknowledge({ success: true, action });
+      acknowledge({ success: true, action, ...details });
     };
 
     const reject = (code, message) => {
@@ -457,7 +457,7 @@ io.on("connection", (client) => {
           break;
         }
 
-        const taskStarted = currentPlayer.startTask(info.taskNumber);
+        const taskStarted = currentPlayer.startTask(info.taskNumber, info.taskTag);
 
         if (taskStarted) {
           playerLobby.synchronize();
@@ -515,7 +515,10 @@ io.on("connection", (client) => {
           break;
         }
 
-        const taskWasCompleted = currentPlayer.finishTask(info.taskNumber);
+        const taskWasCompleted = currentPlayer.finishTask(
+          info.taskNumber,
+          info.taskTag
+        );
 
         if (!taskWasCompleted) {
           console.debug(
@@ -525,11 +528,13 @@ io.on("connection", (client) => {
           break;
         }
 
-        if (completedTask.isExtraTask !== true) {
+        const taskComplete = completedTask.status === "completed";
+
+        if (taskComplete && completedTask.isExtraTask !== true) {
           playerLobby.increaseTaskBar();
         }
 
-        if (currentPlayer.hasCompletedAllRegularTasks()) {
+        if (taskComplete && currentPlayer.hasCompletedAllRegularTasks()) {
           const secretTaskAssigned = currentPlayer.assignSecretExtraTask();
 
           if (secretTaskAssigned) {
@@ -538,7 +543,10 @@ io.on("connection", (client) => {
         }
 
         playerLobby.synchronize();
-        accept();
+        accept({
+          taskComplete,
+          wiretapProgress: completedTask.completedCheckpoints?.length,
+        });
         break;
       }
 

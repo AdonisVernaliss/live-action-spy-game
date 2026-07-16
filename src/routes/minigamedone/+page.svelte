@@ -95,6 +95,7 @@
     const result = await emitGameAction({
       action: "taskCompleted",
       taskNumber: finalTaskNumber,
+      taskTag: localStorage.getItem("currentTaskTag") || undefined,
     });
 
     if (!result.success) {
@@ -103,6 +104,7 @@
     }
 
     localStorage.removeItem("currentTaskNumber");
+    localStorage.removeItem("currentTaskTag");
 
     gotoReplace("/game");
   }

@@ -1,64 +1,129 @@
 <script lang="ts">
-  import { gotoReplace, makeNumberListWith100Sum } from "$lib/util";
+  import { gotoReplace } from "$lib/util";
   import { language } from "$lib/i18n";
+  import { SUM_ROUND_PATTERN } from "$lib/minigames/sumLogic.js";
   import { onDestroy } from "svelte";
 
-  export let nRepeats = 3;
-  export let numbersInMinigame = 12;
+  const ROUND_PATTERN = SUM_ROUND_PATTERN;
+  const BOARD_SIZE = 15;
 
-  let numbers = makeNumberListWith100Sum(numbersInMinigame);
-  let firstSelectedNumber: number | null = null;
+  let numbers: number[] = [];
+  let selectedIndices: number[] = [];
   let message = "";
-  let wins = 0;
+  let round = 0;
+  let waiting = false;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let roundTimer: ReturnType<typeof setTimeout> | null = null;
   let bi = (ru: string, _en: string) => ru;
   $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
+  $: requiredCount = ROUND_PATTERN[round] || ROUND_PATTERN[ROUND_PATTERN.length - 1];
+  $: selectedSum = selectedIndices.reduce((sum, index) => sum + numbers[index], 0);
   const messageText = () => message === "wrong"
     ? bi("❌ Неверно. Попробуйте снова.", "❌ Incorrect. Try again.")
     : message === "correct" ? bi("Верно.", "Correct.") : "";
 
+  function randomInt(min: number, max: number) {
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function shuffle(values: number[]) {
+    for (let index = values.length - 1; index > 0; index -= 1) {
+      const other = Math.floor(Math.random() * (index + 1));
+      [values[index], values[other]] = [values[other], values[index]];
+    }
+    return values;
+  }
+
+  function makeSolution(count: number) {
+    const solution: number[] = [];
+    let remaining = 100;
+
+    for (let index = 0; index < count - 1; index += 1) {
+      const slotsLeft = count - index - 1;
+      const minimum = Math.max(8, remaining - slotsLeft * 52);
+      const maximum = Math.min(52, remaining - slotsLeft * 8);
+      const value = randomInt(minimum, maximum);
+      solution.push(value);
+      remaining -= value;
+    }
+
+    solution.push(remaining);
+    return solution;
+  }
+
   function resetNumbers() {
-    numbers = makeNumberListWith100Sum(numbersInMinigame);
+    const count = ROUND_PATTERN[round];
+    const solution = makeSolution(count);
+    const distractors = Array.from(
+      { length: BOARD_SIZE - count },
+      () => randomInt(7, 68)
+    );
+    numbers = shuffle([...solution, ...distractors]);
+    selectedIndices = [];
   }
 
-  function numbersSumTo100(a: number, b: number): boolean {
-    return a + b === 100;
+  function clearSelection() {
+    if (waiting) return;
+    selectedIndices = [];
+    message = "";
   }
 
-  function clearNumber() {
-    firstSelectedNumber = null;
-  }
+  function selectNumber(index: number) {
+    if (waiting) return;
 
-  function selectNumber(n: number) {
-    if (firstSelectedNumber == null) {
-      firstSelectedNumber = n;
+    if (selectedIndices.includes(index)) {
+      selectedIndices = selectedIndices.filter((selected) => selected !== index);
       message = "";
       return;
     }
 
-    const correctAnswer = numbersSumTo100(firstSelectedNumber, n);
+    if (selectedIndices.length >= requiredCount) return;
 
-    if (!correctAnswer) {
+    const nextSelection = [...selectedIndices, index];
+    selectedIndices = nextSelection;
+    message = "";
+
+    if (nextSelection.length < requiredCount) return;
+
+    const total = nextSelection.reduce(
+      (sum, selected) => sum + numbers[selected],
+      0
+    );
+
+    if (total !== 100) {
+      waiting = true;
       message = "wrong";
-      clearNumber();
+      roundTimer = setTimeout(() => {
+        roundTimer = null;
+        selectedIndices = [];
+        waiting = false;
+      }, 550);
       return;
     }
 
-    wins += 1;
+    waiting = true;
     message = "correct";
 
-    if (wins === nRepeats) {
+    if (round === ROUND_PATTERN.length - 1) {
       finishTimer = setTimeout(() => {
         gotoReplace("/minigamedone");
-      }, 300);
+      }, 650);
     } else {
-      resetNumbers();
-      firstSelectedNumber = null;
+      roundTimer = setTimeout(() => {
+        roundTimer = null;
+        round += 1;
+        waiting = false;
+        message = "";
+        resetNumbers();
+      }, 650);
     }
   }
 
+  resetNumbers();
+
   onDestroy(() => {
     if (finishTimer) clearTimeout(finishTimer);
+    if (roundTimer) clearTimeout(roundTimer);
   });
 </script>
 
@@ -66,18 +131,19 @@
   <section class="sum-card">
     <p class="eyebrow">{bi("Числовой анализ", "Number analysis")}</p>
     <h1>{bi("Сумма до ста", "Sum to one hundred")}</h1>
-    <p class="description">{bi("Выберите два числа, сумма которых равна 100.", "Choose two numbers that add up to 100.")}</p>
+    <p class="description">{bi(`Выберите ${requiredCount} числа с суммой ровно 100.`, `Choose ${requiredCount} numbers that total exactly 100.`)}</p>
     <div class="status">
-      <span>{bi("Осталось решений", "Solutions remaining")}</span>
-      <strong>{nRepeats - wins}</strong>
+      <span>{bi("Раунд", "Round")} <strong>{round + 1}/{ROUND_PATTERN.length}</strong></span>
+      <span>{bi("Выбрано", "Selected")} <strong>{selectedIndices.length}/{requiredCount}</strong></span>
+      <span>{bi("Сумма", "Total")} <strong class:over={selectedSum > 100}>{selectedSum}</strong></span>
     </div>
 
     <div class="number-grid">
-    {#each numbers as n}
+    {#each numbers as n, index}
       <button
         type="button"
-        on:click={() => selectNumber(n)}
-        class:selected={firstSelectedNumber === n}
+        on:click={() => selectNumber(index)}
+        class:selected={selectedIndices.includes(index)}
       >
         {n}
       </button>
@@ -86,16 +152,16 @@
 
     <button
       type="button"
-      on:click={clearNumber}
+      on:click={clearSelection}
       class="reset-button"
-      disabled={firstSelectedNumber == null}
+      disabled={selectedIndices.length === 0 || waiting}
     >
       {bi("Сбросить", "Reset")}
     </button>
 
     <div class="rounds">
-    {#each Array(nRepeats) as _, i}
-        <i class:complete={wins > i}>{wins > i ? "✓" : i + 1}</i>
+    {#each ROUND_PATTERN as count, i}
+        <i class:complete={round > i} class:current={round === i}>{round > i ? "✓" : count}</i>
     {/each}
     </div>
 
@@ -159,17 +225,30 @@
   .status {
     margin: 12px 0 8px;
     padding: 9px 11px;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     justify-content: space-between;
+    gap: 8px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 255, 255, 0.55);
     font-size: 11px;
   }
 
+  .status > span {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+    overflow-wrap: anywhere;
+  }
+
   .status strong {
     color: #7dd3fc;
     font-size: 16px;
+  }
+
+  .status strong.over {
+    color: #f87171;
   }
 
   .number-grid {
@@ -236,6 +315,11 @@
     background: rgba(22, 101, 52, 0.25);
   }
 
+  .rounds i.current {
+    border-color: #38bdf8;
+    color: #7dd3fc;
+  }
+
   .message {
     min-height: 18px;
     margin: 7px 0 0;
@@ -252,7 +336,7 @@
     .sum-card { margin: 0; }
     .description { display: none; }
     .status { margin: 7px 0; }
-    .number-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .number-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .number-grid button { min-height: 42px; }
   }
 </style>

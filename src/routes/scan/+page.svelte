@@ -31,6 +31,7 @@
         description: string;
         primaryLabel: string;
         taskNumber: number;
+        taskTag: string;
       }
     | {
         kind: "playerSync";
@@ -226,6 +227,7 @@
       } catch {
         localStorage.removeItem("gameInfo");
         localStorage.removeItem("currentTaskNumber");
+        localStorage.removeItem("currentTaskTag");
         resolve(false);
         return;
       }
@@ -401,6 +403,26 @@
       return;
     }
 
+    if (task.name === "wiretap") {
+      const checkpoints = ["wiretap1", "wiretap2", "wiretap3"];
+
+      if (!checkpoints.includes(value)) {
+        error = bi(
+          "Для перехвата используйте одну из трёх отдельных меток сигнала.",
+          "Use one of the three distinct signal tags for interception."
+        );
+        return;
+      }
+
+      if (task.completedCheckpoints?.includes(value)) {
+        error = bi(
+          "Эта точка перехвата уже завершена. Найдите другую метку сигнала.",
+          "This interception station is already complete. Find another signal tag."
+        );
+        return;
+      }
+    }
+
     if (
       $playerStore.currentlyDoing.activity !== "nothing" &&
       $playerStore.currentlyDoing.activity !== "task"
@@ -418,6 +440,7 @@
       ),
       primaryLabel: bi("Начать задание", "Start task"),
       taskNumber,
+      taskTag: value,
     };
   }
 
@@ -608,12 +631,15 @@
 
       case "task":
         localStorage.setItem("currentTaskNumber", String(pendingAction.taskNumber));
+        localStorage.setItem("currentTaskTag", pendingAction.taskTag);
 
         if (!(await emitGameAction({
           action: "startTask",
           taskNumber: pendingAction.taskNumber,
+          taskTag: pendingAction.taskTag,
         })).success) {
           localStorage.removeItem("currentTaskNumber");
+          localStorage.removeItem("currentTaskTag");
           actionInProgress = false;
           break;
         }

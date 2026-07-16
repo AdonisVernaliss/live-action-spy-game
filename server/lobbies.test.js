@@ -228,6 +228,37 @@ test("cycling tasks selects real task numbers outside the previous batch", () =>
   assert.ok(player.tasks.every((task) => task.description.includes("Room")));
 });
 
+test("wiretap requires three unique physical checkpoints", () => {
+  const player = makePlayer("green", { name: "crew" });
+  player.tasks = [{
+    name: "wiretap",
+    number: 1,
+    status: "available",
+    completedCheckpoints: [],
+  }];
+
+  assert.equal(player.startTask(1, "wiretap"), false);
+  assert.equal(player.startTask(1, "wiretap1"), true);
+  assert.equal(player.finishTask(1, "wiretap2"), false);
+  assert.equal(player.finishTask(1, "wiretap1"), true);
+  assert.equal(player.tasks[0].status, "available");
+  assert.deepEqual(player.tasks[0].completedCheckpoints, ["wiretap1"]);
+
+  assert.equal(player.startTask(1, "wiretap1"), false);
+  assert.equal(player.startTask(1, "wiretap2"), true);
+  assert.equal(player.finishTask(1, "wiretap2"), true);
+  assert.equal(player.tasks[0].status, "available");
+
+  assert.equal(player.startTask(1, "wiretap3"), true);
+  assert.equal(player.finishTask(1, "wiretap3"), true);
+  assert.equal(player.tasks[0].status, "completed");
+  assert.deepEqual(player.tasks[0].completedCheckpoints, [
+    "wiretap1",
+    "wiretap2",
+    "wiretap3",
+  ]);
+});
+
 test("standard venue names and task descriptions follow the selected language", () => {
   for (const location of BASE_LOCATIONS) {
     assert.equal(localizeLocationName(location.ru, "en"), location.en);

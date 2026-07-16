@@ -5,6 +5,7 @@ import {
   PLAYER_COLORS,
   TASKS,
   TASK_BATCH_SIZE,
+  WIRETAP_CHECKPOINTS,
 } from "./consts.js";
 import { randInt } from "./util.js";
 
@@ -59,22 +60,31 @@ export class Player {
     for (const taskNumber of newTasks.values()) {
       const taskName = TASKS[taskNumber].name;
 
-      this.tasks.push({
+      const task = {
         name: taskName,
         number: taskNumber,
         description: TASKS[taskNumber].makeDescription(activities),
         descriptionEn: TASKS[taskNumber].makeDescriptionEn(activities),
         status: "available",
-      });
+      };
+
+      if (taskName === "wiretap") task.completedCheckpoints = [];
+
+      this.tasks.push(task);
     }
   }
 
-  startTask(taskNumber) {
+  startTask(taskNumber, taskTag) {
     if (this.isTaskLocked()) return false;
 
     const task = this.tasks.find((task) => task.number === taskNumber);
 
     if (task == null || task.status !== "available") return false;
+
+    if (task.name === "wiretap" && this.role.name !== "impostor") {
+      if (!WIRETAP_CHECKPOINTS.includes(taskTag)) return false;
+      if (task.completedCheckpoints?.includes(taskTag)) return false;
+    }
 
     // If the player is already inside a task, allow switching/restarting.
     // This prevents players getting stuck after refresh, scan page redirect, or old stale task state.
@@ -88,12 +98,13 @@ export class Player {
     this.currentlyDoing = {
       activity: "task",
       number: taskNumber,
+      ...(task.name === "wiretap" ? { taskTag } : {}),
     };
 
     return true;
   }
 
-  finishTask(taskNumber) {
+  finishTask(taskNumber, taskTag) {
     if (
       this.currentlyDoing.activity !== "task" &&
       this.role.name !== "impostor"
@@ -115,6 +126,21 @@ export class Player {
     if (task.status === "completed") {
       this.currentlyDoing = { activity: "nothing" };
       return false;
+    }
+
+    if (task.name === "wiretap" && this.role.name !== "impostor") {
+      if (!WIRETAP_CHECKPOINTS.includes(taskTag)) return false;
+      if (this.currentlyDoing.taskTag !== taskTag) return false;
+
+      task.completedCheckpoints ??= [];
+      if (task.completedCheckpoints.includes(taskTag)) return false;
+
+      task.completedCheckpoints.push(taskTag);
+      if (task.completedCheckpoints.length === WIRETAP_CHECKPOINTS.length) {
+        task.status = "completed";
+      }
+      this.currentlyDoing = { activity: "nothing" };
+      return true;
     }
 
     task.status = "completed";

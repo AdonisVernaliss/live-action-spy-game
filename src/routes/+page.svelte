@@ -101,6 +101,7 @@
     } catch {
       localStorage.removeItem("gameInfo");
       localStorage.removeItem("currentTaskNumber");
+      localStorage.removeItem("currentTaskTag");
       restoringSession = false;
       error = "Сохранённое лобби больше не существует";
       return;
@@ -126,6 +127,7 @@
         } else {
           localStorage.removeItem("gameInfo");
           localStorage.removeItem("currentTaskNumber");
+          localStorage.removeItem("currentTaskTag");
           restoringSession = false;
           error = "Сохранённое лобби больше не существует";
         }
