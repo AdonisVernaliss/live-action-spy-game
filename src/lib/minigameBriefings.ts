@@ -25,13 +25,13 @@ export const MINIGAME_BRIEFINGS: Record<string, MinigameBriefing> = {
   "1": {
     title: { ru: "Перехват сигнала", en: "Signal interception" },
     objective: {
-      ru: "Настройте три диапазона и удерживайте устойчивый сигнал на этой физической точке.",
-      en: "Tune three bands and hold a stable signal at this physical station.",
+      ru: "Найдите на пеленгаторе и удержите три сигнальных импульса на этой физической точке.",
+      en: "Locate and hold three signal bursts on the radar at this physical station.",
     },
     rules: [
-      { ru: "Каждая из трёх меток сигнала имеет собственный режим помех.", en: "Each of the three signal tags has its own interference mode." },
+      { ru: "Цель появляется короткими импульсами; ищите её частоту и фазу по общей силе сигнала.", en: "The target appears in short bursts; use overall signal strength to find its frequency and phase." },
+      { ru: "Каждая из трёх меток имеет собственный режим дрейфа и помех.", en: "Each of the three tags has its own drift and interference mode." },
       { ru: "Задание завершится только после трёх разных точек.", en: "The task completes only after all three distinct stations." },
-      { ru: "Повторное прохождение уже готовой точки не засчитывается.", en: "Repeating an already completed station does not count." },
     ],
   },
   "2": {
@@ -66,7 +66,7 @@ export const MINIGAME_BRIEFINGS: Record<string, MinigameBriefing> = {
     rules: [
       { ru: "Карантин подходит для обычных, быстрых и скрытых вирусов.", en: "Quarantine handles normal, fast, and stealth viruses." },
       { ru: "Пробой брони применяется только к бронированным вирусам.", en: "Armor breaker is only for armored viruses." },
-      { ru: "Обычный файл или неверный инструмент: −1 очко.", en: "A normal file or the wrong tool costs 1 point." },
+      { ru: "Обычные файлы тоже могут вспыхивать; проверяйте значок и подпись. Ошибка: −1 очко.", en: "Normal files may also flash; check the icon and label. A mistake costs 1 point." },
     ],
   },
   "5": {

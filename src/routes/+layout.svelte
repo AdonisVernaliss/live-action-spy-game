@@ -64,6 +64,7 @@
       routeId === "/join" ||
       routeId === "/scan" ||
       routeId === "/sync" ||
+      routeId === "/dontmove" ||
       routeId === "/minigamedone" ||
       routeId === "/rules" ||
       routeId === "/adminlinks" ||
@@ -143,6 +144,11 @@
         break;
 
       case "started":
+        if (lobby.virusScan?.state === "active") {
+          if (routeId !== "/dontmove") gotoReplace("/dontmove");
+          break;
+        }
+
         if (
           lobby.playerSync?.state === "active" ||
           lobby.playerSync?.state === "waiting"
@@ -385,6 +391,11 @@
           break;
 
         case "started":
+          if (lobby.virusScan?.state === "active") {
+            if ($page.route.id !== "/dontmove") gotoReplace("/dontmove");
+            break;
+          }
+
           if (
             lobby.playerSync?.state === "active" ||
             lobby.playerSync?.state === "waiting"
@@ -516,6 +527,7 @@
     "/adminlinks",
     "/admin",
     "/sync",
+    "/dontmove",
   ];
 
   $: displayNotificationBar =

@@ -7,7 +7,7 @@
   import { emitGameAction, getSocketIO } from "$lib/websocket";
   import type { Socket } from "socket.io-client";
   import type { Color } from "$lib/types";
-  import { language } from "$lib/i18n";
+  import { language, localizeServerMessage } from "$lib/i18n";
 
   type ScanKind = "meeting" | "task" | "player" | "firewall" | "unknown";
   type ScanSource = "qr" | "nfc" | null;
@@ -682,31 +682,26 @@
           actionInProgress = false;
           break;
         }
-        successMessage = bi(
-          "Ремонт начат. Оставайтесь у терминала и отсканируйте его снова для завершения.",
-          "Repair started. Stay at the terminal and scan it again to finish."
-        );
-        actionInProgress = false;
-        pendingAction = {
-          kind: "firewallFinish",
-          title: bi("Терминал защиты", "Firewall terminal"),
-          description: bi(
-            "Сканирование подтверждено. Завершите действие после ремонта терминала.",
-            "Scan confirmed. Complete the action after repairing the terminal."
-          ),
-          primaryLabel: bi("Завершить ремонт", "Finish repair"),
-          number: pendingAction.number,
-        };
+        gotoReplace("/game");
         break;
 
-      case "firewallFinish":
-        if ((await emitGameAction({
+      case "firewallFinish": {
+        const firewallResult = await emitGameAction({
           action: "finishFirewallFix",
           number: pendingAction.number,
-        })).success) {
+        });
+        if (firewallResult.success) {
           gotoReplace("/game");
-        } else actionInProgress = false;
+        } else {
+          error = `${localizeServerMessage(firewallResult.message, $language)} ${bi(
+            "Вернитесь в игру и повторно отсканируйте терминал после завершения отсчёта.",
+            "Return to the game and scan the terminal again after the countdown finishes."
+          )}`;
+          pendingAction = null;
+          actionInProgress = false;
+        }
         break;
+      }
     }
   }
 

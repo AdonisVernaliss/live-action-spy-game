@@ -8,6 +8,7 @@ export {
   TEST_MODE_MIN_PLAYERS,
   VIRUS_SCAN_PREPARE_SECS,
   VIRUS_SCAN_TIME,
+  VIRUS_SCAN_FAILED_PUNISH_SECS,
 } from "../../server/consts";
 import { env } from "$env/dynamic/public";
 

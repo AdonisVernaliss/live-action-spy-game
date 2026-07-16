@@ -203,9 +203,11 @@ export const VIRUS_SCAN_FAILED_PUNISH_SECS = 25;
 export const VIRUS_SCAN_COOLDOWN = 30;
 export const VIRUS_SCAN_PREPARE_SECS = 5;
 export const VIRUS_SCAN_TIME = 10;
+export const VIRUS_SCAN_RESULT_GRACE_MS = 5_000;
 
 export const FIREWALL_FIX_TIME = 120;
 export const FIREWALL_COOLDOWN = 60;
+export const FIREWALL_REPAIR_HOLD_MS = 10_000;
 
 // Fast, explicit timings used only for lobbies where the host enabled test mode.
 // Keeping them server-side prevents a browser from shortening a real match.
@@ -218,6 +220,7 @@ export const TEST_MODE_TIMERS = Object.freeze({
   killCooldown: 8,
   sabotageCooldown: 5,
   firewall: 25,
+  firewallRepairHoldMs: 2_000,
   playerSyncDurationMs: 3_000,
 });
 

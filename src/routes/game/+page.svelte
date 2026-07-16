@@ -23,6 +23,7 @@
   } from "../../../server/consts";
   import { language, t } from "$lib/i18n";
   import { localizeLocationName } from "$lib/locationSetup";
+  import type { Player } from "$lib/types";
 
   let bi = (ru: string, _en: string) => ru;
   $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
@@ -33,6 +34,30 @@
   let touchStartY = 0;
   let touchStartX = 0;
   let swipeInput: "pointer" | "touch" | null = null;
+  let wallClock = Date.now();
+  let repairClockStartedAt = Date.now();
+  let repairInitialRemainingMs = 0;
+  let lastRepairSnapshot: Player["currentlyDoing"] | null = null;
+
+  $: repairSnapshot = $playerStore?.currentlyDoing ?? null;
+  $: if (repairSnapshot !== lastRepairSnapshot) {
+    lastRepairSnapshot = repairSnapshot;
+    if (repairSnapshot?.activity === "fixFirewall") {
+      repairClockStartedAt = Date.now();
+      repairInitialRemainingMs = repairSnapshot.readyInMs;
+    }
+  }
+
+  $: firewallRepairSecondsLeft =
+    $playerStore?.currentlyDoing.activity === "fixFirewall"
+      ? Math.max(
+          0,
+          Math.ceil(
+            (repairInitialRemainingMs - (wallClock - repairClockStartedAt)) /
+              1000
+          )
+        )
+      : 0;
 
   function beginSwipe(
     clientX: number,
@@ -103,7 +128,13 @@
       return;
     }
 
-    emitGameAction({ action: "clearCurrentActivity" });
+    if ($playerStore.currentlyDoing.activity !== "fixFirewall") {
+      emitGameAction({ action: "clearCurrentActivity" });
+    }
+
+    const clockInterval = window.setInterval(() => {
+      if (!$lobbyStore?.pause?.active) wallClock = Date.now();
+    }, 250);
 
     io.on("virusScan", () => {
       if (
@@ -116,6 +147,7 @@
     });
 
     return () => {
+      window.clearInterval(clockInterval);
       io.off("virusScan");
     };
   });
@@ -232,6 +264,28 @@
             </p>
           {/if}
         </section>
+
+        {#if $playerStore.currentlyDoing.activity === "fixFirewall"}
+          <section class="firewall-repair-card" class:ready={firewallRepairSecondsLeft === 0}>
+            <span>{bi("ВОССТАНОВЛЕНИЕ ЗАЩИТЫ", "FIREWALL RECOVERY")}</span>
+            <strong>
+              {firewallRepairSecondsLeft > 0
+                ? bi(`${firewallRepairSecondsLeft} сек.`, `${firewallRepairSecondsLeft}s`)
+                : bi("ГОТОВО", "READY")}
+            </strong>
+            <p>
+              {firewallRepairSecondsLeft > 0
+                ? bi(
+                    `Оставайтесь у терминала ${$playerStore.currentlyDoing.number + 1}. После отсчёта снова отсканируйте эту же NFC-метку или QR-код.`,
+                    `Stay at terminal ${$playerStore.currentlyDoing.number + 1}. When the countdown ends, scan the same NFC tag or QR code again.`
+                  )
+                : bi(
+                    "Повторно отсканируйте этот терминал, чтобы подтвердить ремонт.",
+                    "Scan this terminal again to confirm the repair."
+                  )}
+            </p>
+          </section>
+        {/if}
 
         <p class="text-lg mt-8">{$t("game.tasks")}</p>
 
@@ -528,6 +582,42 @@
     color: rgba(255, 255, 255, 0.66);
     font-size: 12px;
     line-height: 1.4;
+  }
+
+  .firewall-repair-card {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid rgba(250, 204, 21, 0.52);
+    border-radius: 16px;
+    background: rgba(113, 63, 18, 0.24);
+  }
+
+  .firewall-repair-card.ready {
+    border-color: rgba(74, 222, 128, 0.55);
+    background: rgba(20, 83, 45, 0.24);
+  }
+
+  .firewall-repair-card span {
+    display: block;
+    color: #fde68a;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.1em;
+  }
+
+  .firewall-repair-card.ready span { color: #86efac; }
+
+  .firewall-repair-card strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 20px;
+  }
+
+  .firewall-repair-card p {
+    margin: 5px 0 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    line-height: 1.45;
   }
 
   @keyframes sync-request-pulse {

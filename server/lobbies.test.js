@@ -4,10 +4,12 @@ import { Lobby } from "./lobbies.js";
 import { Player, playerNameValid } from "./player.js";
 import {
   BASE_LOCATIONS,
+  FIREWALL_REPAIR_HOLD_MS,
   NFC_ACTIVITIES,
   NFC_ACTIVITY_TAGS,
   TASKS,
   TEST_MODE_TIMERS,
+  VIRUS_SCAN_FAILED_PUNISH_SECS,
   localizeLocationName,
 } from "./consts.js";
 
@@ -363,13 +365,20 @@ test("firewall sabotage requires an impostor and both matching terminals", () =>
   assert.ok(lobby.activeEffects.firewallBreach);
 
   assert.equal(green.startFirewallFix(0), true);
+  assert.ok(green.currentlyDoing.readyAt >= Date.now() + FIREWALL_REPAIR_HOLD_MS - 50);
+  const repairView = lobby.serializeForPlayer("green").players.green.currentlyDoing;
+  assert.equal(repairView.activity, "fixFirewall");
+  assert.ok(repairView.readyInMs > 0);
+  assert.ok(repairView.readyInMs <= FIREWALL_REPAIR_HOLD_MS);
   assert.equal(green.finishFirewallFix(1), false);
-  assert.deepEqual(green.currentlyDoing, { activity: "fixFirewall", number: 0 });
+  assert.equal(green.finishFirewallFix(0), false);
+  green.currentlyDoing.readyAt = Date.now() - 1;
   assert.equal(green.finishFirewallFix(0), true);
   assert.deepEqual(lobby.pressFirewallButton(0), [true]);
   assert.equal(lobby.activeEffects.firewallBreach.buttonsPressed.firewallbutton1, true);
 
   assert.equal(blue.startFirewallFix(1), true);
+  blue.currentlyDoing.readyAt = Date.now() - 1;
   assert.equal(blue.finishFirewallFix(1), true);
   assert.deepEqual(lobby.pressFirewallButton(1), [true]);
   assert.equal(lobby.activeEffects.firewallBreach, null);
@@ -403,6 +412,129 @@ test("virus sabotage cannot overlap and movement locks tasks on the server", () 
     { name: "test", number: 0, description: "Тест", status: "available" },
   ];
   assert.equal(green.startTask(0), false);
+  lobby.destroy();
+});
+
+test("virus scan completion is server-timed and tracked per target", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.deepEqual(lobby.launchSabotage("red", { kind: "virusScan" }), [true]);
+  assert.equal(lobby.serializeForPlayer("green").virusScan.state, "active");
+  assert.equal(lobby.completeVirusScan("green")[0], false);
+
+  lobby._virusScanScanUntil = Date.now() - 1;
+  assert.deepEqual(lobby.completeVirusScan("green"), [true]);
+  assert.equal(lobby.serializeForPlayer("green").virusScan.state, "inactive");
+  assert.equal(lobby.serializeForPlayer("blue").virusScan.state, "active");
+  assert.equal(green.isTaskLocked(), false);
+  lobby.destroy();
+});
+
+test("abandoning a virus scan applies the penalty from the server deadline", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.deepEqual(lobby.launchSabotage("red", { kind: "virusScan" }), [true]);
+  lobby._virusScanActiveUntil = Date.now() - 1;
+  assert.equal(lobby.resolveVirusScanTimeout(), true);
+  assert.equal(green.isTaskLocked(), true);
+  assert.equal(blue.isTaskLocked(), true);
+  assert.ok(green.taskLockedUntil >= Date.now() + VIRUS_SCAN_FAILED_PUNISH_SECS * 1000 - 50);
+  assert.equal(lobby.serializeForPlayer("green").virusScan.state, "inactive");
+  lobby.destroy();
+});
+
+test("pausing freezes virus deadlines and active task penalties", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.deepEqual(lobby.launchSabotage("red", { kind: "virusScan" }), [true]);
+  green.lockTasks(10);
+  const prepareUntil = lobby._virusScanPrepareUntil;
+  const scanUntil = lobby._virusScanScanUntil;
+  const activeUntil = lobby._virusScanActiveUntil;
+  const taskLockedUntil = green.taskLockedUntil;
+
+  assert.deepEqual(lobby.adminSetPaused(true), [true]);
+  assert.equal(lobby.serializeForPlayer("green").virusScan.paused, true);
+  assert.equal(lobby._virusScanTimer, null);
+  lobby.pause.startedAt = Date.now() - 5_000;
+  assert.deepEqual(lobby.adminSetPaused(false), [true]);
+
+  assert.ok(lobby._virusScanPrepareUntil >= prepareUntil + 4_950);
+  assert.ok(lobby._virusScanScanUntil >= scanUntil + 4_950);
+  assert.ok(lobby._virusScanActiveUntil >= activeUntil + 4_950);
+  assert.ok(green.taskLockedUntil >= taskLockedUntil + 4_950);
+  assert.equal(lobby.serializeForPlayer("green").virusScan.paused, false);
+  lobby.destroy();
+});
+
+test("virus sabotage is rejected when no operative is available", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  green.currentlyDoing = { activity: "task", number: 1 };
+  const lobby = makeLobby([green, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.equal(lobby.launchSabotage("red", { kind: "virusScan" })[0], false);
+  assert.equal(red.role.sabotageCooldown, 0);
+  lobby.destroy();
+});
+
+test("a meeting cancels virus deadlines without applying a late penalty", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.deepEqual(lobby.launchSabotage("red", { kind: "virusScan" }), [true]);
+  lobby.startMeetingCall("emergency", "green");
+  assert.equal(lobby._virusScanTimer, null);
+  assert.equal(lobby.serializeForPlayer("green").virusScan.state, "inactive");
+  assert.equal(lobby.resolveVirusScanTimeout(), false);
+  assert.equal(green.isTaskLocked(), false);
+  assert.equal(blue.isTaskLocked(), false);
   lobby.destroy();
 });
 

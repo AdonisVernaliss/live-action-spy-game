@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import {
   EMERGENCY_MEETINGS_PER_PLAYER,
+  FIREWALL_REPAIR_HOLD_MS,
   N_TOTAL_TASKS,
   PLAYER_COLORS,
   TASKS,
@@ -180,21 +181,35 @@ export class Player {
     return true;
   }
 
-  startFirewallFix(number) {
+  startFirewallFix(number, holdMs = FIREWALL_REPAIR_HOLD_MS) {
     if (this.currentlyDoing.activity !== "nothing") return false;
     if (number !== 0 && number !== 1) return false;
+
+    const repairDuration = Math.max(0, Number(holdMs) || 0);
 
     this.currentlyDoing = {
       activity: "fixFirewall",
       number,
+      readyAt: Date.now() + repairDuration,
     };
 
     return true;
   }
 
+  firewallRepairSecondsLeft(number) {
+    if (this.currentlyDoing.activity !== "fixFirewall") return null;
+    if (this.currentlyDoing.number !== number) return null;
+
+    return Math.max(
+      0,
+      Math.ceil((this.currentlyDoing.readyAt - Date.now()) / 1000)
+    );
+  }
+
   finishFirewallFix(number) {
     if (this.currentlyDoing.activity !== "fixFirewall") return false;
     if (this.currentlyDoing.number !== number) return false;
+    if (this.firewallRepairSecondsLeft(number) !== 0) return false;
 
     this.currentlyDoing = {
       activity: "nothing",

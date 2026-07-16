@@ -431,6 +431,7 @@
       vote_cast: ["голосование", "vote"],
       sabotage: ["саботаж", "sabotage"],
       virus_penalty: ["вирусная проверка", "virus scan"],
+      virus_passed: ["вирусная проверка", "virus scan"],
       game_ended: ["конец игры", "game ended"],
       admin_recovery: ["команда ведущего", "host action"],
       test_mode: ["тестовый режим", "test mode"],
@@ -484,6 +485,8 @@
       .replace(/^(.+) устранён игроком (.+)$/, "$1 was eliminated by $2")
       .replace(/^(.+) отправил голос$/, "$1 submitted a vote")
       .replace(/^(.+) двигался во время вирусной проверки$/, "$1 moved during the virus scan")
+      .replace(/^(.+) не завершил вирусную проверку$/, "$1 did not complete the virus scan")
+      .replace(/^(.+) успешно прошёл вирусную проверку$/, "$1 passed the virus scan")
       .replace(/^Вирусная проверка запущена игроком (.+)$/, "Virus scan launched by $1")
       .replace(/^Взлом защиты запущен игроком (.+)$/, "Firewall breach launched by $1")
       .replace(/^Отключившийся игрок (.+) удалён ведущим$/, "Disconnected player $1 was removed by the host")

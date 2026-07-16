@@ -23,6 +23,7 @@ import {
   VIRUS_SCAN_FAILED_PUNISH_SECS,
   VIRUS_SCAN_COOLDOWN,
   VIRUS_SCAN_PREPARE_SECS,
+  VIRUS_SCAN_RESULT_GRACE_MS,
   VIRUS_SCAN_TIME,
 } from "./consts.js";
 import { io } from "./socketio.js";
@@ -61,8 +62,11 @@ export class Lobby {
     this._lobbyDeleteTimeout = null;
     this._impostorCdInterval = null;
     this._phaseInterval = null;
+    this._virusScanPrepareUntil = 0;
+    this._virusScanScanUntil = 0;
     this._virusScanActiveUntil = 0;
     this._virusScanTargets = new Set();
+    this._virusScanTimer = null;
     this._preflightChecks = {};
     this._playerSyncRequests = new Map();
     this._playerSyncRequestTimers = new Map();
@@ -184,8 +188,7 @@ export class Lobby {
       player.currentlyDoing = { activity: "nothing" };
     }
     this.activeEffects.hacked = null;
-    this._virusScanActiveUntil = 0;
-    this._virusScanTargets.clear();
+    this.#resetVirusScanState();
     this.recordEvent(
       "meeting_called",
       `${type === "emergency" ? "Экстренное собрание" : "Собрание по найденному телу"} созвано игроком ${this.players[initiatorColor]?.name || initiatorColor}`
@@ -919,10 +922,7 @@ export class Lobby {
 
     const { kind } = sabotage;
 
-    if (this._virusScanActiveUntil <= Date.now()) {
-      this._virusScanActiveUntil = 0;
-      this._virusScanTargets.clear();
-    }
+    this.resolveVirusScanTimeout();
 
     if (
       this.activeEffects.firewallBreach != null ||
@@ -972,8 +972,69 @@ export class Lobby {
       "virus_penalty",
       `${player.name} двигался во время вирусной проверки`
     );
+    if (this._virusScanTargets.size === 0) this.#resetVirusScanState();
     this.synchronize();
     return [true];
+  }
+
+  completeVirusScan(playerColor) {
+    if (this.pause.active) {
+      return [false, "Игра поставлена на паузу"];
+    }
+    if (this.status.state !== "started") {
+      return [false, "Вирусная проверка недоступна вне активного раунда"];
+    }
+
+    const now = Date.now();
+    if (this._virusScanActiveUntil <= now) {
+      this.resolveVirusScanTimeout();
+      return [false, "Время вирусной проверки истекло"];
+    }
+    if (!this._virusScanTargets.has(playerColor)) {
+      return [false, "Для этого игрока нет активной вирусной проверки"];
+    }
+    if (this._virusScanScanUntil > now) {
+      return [false, "Вирусная проверка ещё не завершена"];
+    }
+
+    const player = this.players[playerColor];
+    if (player == null || player.status !== "alive" || player.role.name !== "crew") {
+      return [false, "Вирусная проверка неприменима"];
+    }
+
+    this._virusScanTargets.delete(playerColor);
+    this.recordEvent(
+      "virus_passed",
+      `${player.name} успешно прошёл вирусную проверку`
+    );
+    if (this._virusScanTargets.size === 0) this.#resetVirusScanState();
+    this.synchronize();
+    return [true];
+  }
+
+  resolveVirusScanTimeout() {
+    if (this._virusScanActiveUntil === 0) return false;
+    if (this.pause.active) return false;
+    if (this._virusScanActiveUntil > Date.now()) {
+      this.#scheduleVirusScanDeadline();
+      return false;
+    }
+
+    for (const playerColor of this._virusScanTargets) {
+      const player = this.players[playerColor];
+      if (player == null || player.status !== "alive" || player.role.name !== "crew") {
+        continue;
+      }
+      player.lockTasks(VIRUS_SCAN_FAILED_PUNISH_SECS);
+      this.recordEvent(
+        "virus_penalty",
+        `${player.name} не завершил вирусную проверку`
+      );
+    }
+
+    this.#resetVirusScanState();
+    this.synchronize();
+    return true;
   }
 
   // Increase the taskbar with the completion of a single task
@@ -1107,24 +1168,35 @@ export class Lobby {
       return [false, "Недопустимый внедрённый агент"];
     }
 
+    const targets = Object.values(this.players)
+      .filter(
+        (player) =>
+          player.status === "alive" &&
+          player.role.name === "crew" &&
+          player.currentlyDoing.activity === "nothing"
+      )
+      .map((player) => player.color);
+
+    if (targets.length === 0) {
+      return [false, "Нет свободных оперативников для вирусной проверки"];
+    }
+
     impostor.role.sabotageCooldown = this.testMode.enabled
       ? TEST_MODE_TIMERS.sabotageCooldown
       : VIRUS_SCAN_COOLDOWN;
 
-    this._virusScanTargets = new Set(
-      Object.values(this.players)
-        .filter(
-          (player) =>
-            player.status === "alive" &&
-            player.role.name === "crew" &&
-            player.currentlyDoing.activity === "nothing"
-        )
-        .map((player) => player.color)
-    );
+    const now = Date.now();
+    this._virusScanTargets = new Set(targets);
+    this._virusScanPrepareUntil = now + VIRUS_SCAN_PREPARE_SECS * 1000;
+    this._virusScanScanUntil =
+      this._virusScanPrepareUntil + VIRUS_SCAN_TIME * 1000;
     this._virusScanActiveUntil =
-      Date.now() + (VIRUS_SCAN_PREPARE_SECS + VIRUS_SCAN_TIME + 2) * 1000;
+      this._virusScanScanUntil + VIRUS_SCAN_RESULT_GRACE_MS;
+    this.#scheduleVirusScanDeadline();
 
-    io.to(this.id).emit("virusScan");
+    for (const playerColor of targets) {
+      io.to(this.players[playerColor].id).emit("virusScan");
+    }
     this.recordEvent(
       "sabotage",
       `Вирусная проверка запущена игроком ${impostor.name}`
@@ -1132,6 +1204,61 @@ export class Lobby {
     this.synchronize();
 
     return [true];
+  }
+
+  #scheduleVirusScanDeadline() {
+    if (this._virusScanTimer != null) clearTimeout(this._virusScanTimer);
+    this._virusScanTimer = null;
+    if (
+      this.pause.active ||
+      this._virusScanActiveUntil === 0 ||
+      this._virusScanTargets.size === 0
+    ) {
+      return;
+    }
+
+    const delay = Math.max(0, this._virusScanActiveUntil - Date.now());
+    this._virusScanTimer = setTimeout(() => {
+      this._virusScanTimer = null;
+      this.resolveVirusScanTimeout();
+    }, delay);
+    this._virusScanTimer.unref?.();
+  }
+
+  #resetVirusScanState() {
+    if (this._virusScanTimer != null) clearTimeout(this._virusScanTimer);
+    this._virusScanTimer = null;
+    this._virusScanPrepareUntil = 0;
+    this._virusScanScanUntil = 0;
+    this._virusScanActiveUntil = 0;
+    this._virusScanTargets.clear();
+  }
+
+  #virusScanView(playerColor) {
+    const effectiveNow = this.pause.active
+      ? this.pause.startedAt || Date.now()
+      : Date.now();
+
+    if (
+      !this._virusScanTargets.has(playerColor) ||
+      this._virusScanActiveUntil <= effectiveNow
+    ) {
+      return { state: "inactive" };
+    }
+
+    return {
+      state: "active",
+      prepareRemainingMs: Math.max(
+        0,
+        this._virusScanPrepareUntil - effectiveNow
+      ),
+      scanRemainingMs: Math.max(0, this._virusScanScanUntil - effectiveNow),
+      deadlineRemainingMs: Math.max(
+        0,
+        this._virusScanActiveUntil - effectiveNow
+      ),
+      paused: this.pause.active,
+    };
   }
 
   #startFirewallBreach(impostorColor) {
@@ -1307,8 +1434,7 @@ export class Lobby {
     this.#clearPlayerSyncInteractions();
     this.activeEffects.firewallBreach = null;
     this.activeEffects.hacked = null;
-    this._virusScanActiveUntil = 0;
-    this._virusScanTargets.clear();
+    this.#resetVirusScanState();
     this.pause = { active: false, startedAt: null };
     for (const player of Object.values(this.players)) {
       player.currentlyDoing = { activity: "nothing" };
@@ -1351,6 +1477,8 @@ export class Lobby {
 
     if (active) {
       this.pause = { active: true, startedAt: Date.now() };
+      if (this._virusScanTimer != null) clearTimeout(this._virusScanTimer);
+      this._virusScanTimer = null;
       this.#clearPlayerSyncInteractions();
       for (const player of Object.values(this.players)) {
         player.currentlyDoing = { activity: "nothing" };
@@ -1360,9 +1488,17 @@ export class Lobby {
       const pauseStartedAt = this.pause.startedAt || Date.now();
       const pauseDuration = Math.max(0, Date.now() - pauseStartedAt);
       if (this._virusScanActiveUntil > pauseStartedAt) {
+        this._virusScanPrepareUntil += pauseDuration;
+        this._virusScanScanUntil += pauseDuration;
         this._virusScanActiveUntil += pauseDuration;
       }
+      for (const player of Object.values(this.players)) {
+        if (player.taskLockedUntil > pauseStartedAt) {
+          player.taskLockedUntil += pauseDuration;
+        }
+      }
       this.pause = { active: false, startedAt: null };
+      this.#scheduleVirusScanDeadline();
       this.recordEvent("game_resumed", "Матч продолжен ведущим");
     }
 
@@ -1479,8 +1615,7 @@ export class Lobby {
 
     this.activeEffects.firewallBreach = null;
     this.activeEffects.hacked = null;
-    this._virusScanActiveUntil = 0;
-    this._virusScanTargets.clear();
+    this.#resetVirusScanState();
     for (const player of Object.values(this.players)) {
       if (player.currentlyDoing.activity === "fixFirewall") {
         player.currentlyDoing = { activity: "nothing" };
@@ -1582,8 +1717,7 @@ export class Lobby {
     this.#removeGameIntervals();
     this.#clearPlayerSyncInteractions();
     this.activeEffects = { ...ACTIVE_EFFECTS_BASE };
-    this._virusScanActiveUntil = 0;
-    this._virusScanTargets.clear();
+    this.#resetVirusScanState();
     this.pause = { active: false, startedAt: null };
     this.taskProgression = { real: 0, displayed: 0 };
     this.tasksToWin = 34;
@@ -1721,6 +1855,13 @@ export class Lobby {
       ) {
         player.currentlyDoing = { activity: "nothing" };
       }
+      if (
+        player.currentlyDoing?.activity === "fixFirewall" &&
+        (!Number.isFinite(player.currentlyDoing.readyAt) ||
+          this.activeEffects.firewallBreach == null)
+      ) {
+        player.currentlyDoing = { activity: "nothing" };
+      }
       if (player.syncTask == null) {
         player.resetSyncTask(!player.isHostOnly);
       }
@@ -1728,6 +1869,8 @@ export class Lobby {
 
     if (this.pause.active) {
       this.pause.startedAt = Date.now();
+    } else {
+      this.#scheduleVirusScanDeadline();
     }
 
     if (
@@ -1934,6 +2077,8 @@ export class Lobby {
 
   #removeIntervals() {
     this.#removeGameIntervals();
+    if (this._virusScanTimer != null) clearTimeout(this._virusScanTimer);
+    this._virusScanTimer = null;
     if (this._lobbyDeleteTimeout != null)
       clearTimeout(this._lobbyDeleteTimeout);
     this._lobbyDeleteTimeout = null;
@@ -1951,16 +2096,36 @@ export class Lobby {
   serializeForPlayer(viewerColor) {
     const lobbyState = this.serialize();
     const viewer = this.players[viewerColor];
+    const snapshotNow = Date.now();
     lobbyState.players = Object.fromEntries(
       Object.entries(lobbyState.players).map(([color, player]) => {
         const canSeeRole =
           this.status.state === "gameEnded" ||
           color === viewerColor ||
           (viewer?.role.name === "impostor" && player.role.name === "impostor");
-        return [color, canSeeRole ? player : { ...player, role: { name: "undecided" } }];
+        const playerView =
+          player.currentlyDoing.activity === "fixFirewall"
+            ? {
+                ...player,
+                currentlyDoing: {
+                  ...player.currentlyDoing,
+                  readyInMs: Math.max(
+                    0,
+                    player.currentlyDoing.readyAt - snapshotNow
+                  ),
+                },
+              }
+            : player;
+        return [
+          color,
+          canSeeRole
+            ? playerView
+            : { ...playerView, role: { name: "undecided" } },
+        ];
       })
     );
     lobbyState.playerSync = this.#playerSyncView(viewerColor);
+    lobbyState.virusScan = this.#virusScanView(viewerColor);
     return lobbyState;
   }
 
@@ -2001,6 +2166,14 @@ export class Lobby {
       virusScanRemainingMs: Math.max(
         0,
         this._virusScanActiveUntil - effectiveNow
+      ),
+      virusScanPrepareRemainingMs: Math.max(
+        0,
+        this._virusScanPrepareUntil - effectiveNow
+      ),
+      virusScanScanRemainingMs: Math.max(
+        0,
+        this._virusScanScanUntil - effectiveNow
       ),
       virusScanTargets: [...this._virusScanTargets],
     };
@@ -2189,8 +2362,24 @@ function restorePersistedLobbies() {
         stored.preflightChecks != null && typeof stored.preflightChecks === "object"
           ? stored.preflightChecks
           : {};
-      lobby._virusScanActiveUntil =
-        Date.now() + Math.max(0, Number(stored.virusScanRemainingMs) || 0);
+      const restoredAt = Date.now();
+      const activeRemainingMs = Math.max(
+        0,
+        Number(stored.virusScanRemainingMs) || 0
+      );
+      const scanRemainingMs = Math.max(
+        0,
+        Number(stored.virusScanScanRemainingMs) ||
+          activeRemainingMs - VIRUS_SCAN_RESULT_GRACE_MS
+      );
+      const prepareRemainingMs = Math.max(
+        0,
+        Number(stored.virusScanPrepareRemainingMs) ||
+          scanRemainingMs - VIRUS_SCAN_TIME * 1000
+      );
+      lobby._virusScanPrepareUntil = restoredAt + prepareRemainingMs;
+      lobby._virusScanScanUntil = restoredAt + scanRemainingMs;
+      lobby._virusScanActiveUntil = restoredAt + activeRemainingMs;
 
       lobbies[lobby.id] = lobby;
       lobby.recordEvent(

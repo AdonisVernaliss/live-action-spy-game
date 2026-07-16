@@ -81,7 +81,7 @@
       );
       if (holdProgress >= WIRETAP_HOLD_SECONDS) completeRound();
     } else {
-      holdProgress = Math.max(0, holdProgress - (jammed ? 0.08 : 0.16));
+      holdProgress = Math.max(0, holdProgress - (jammed ? 0.12 : 0.2));
     }
   }
 

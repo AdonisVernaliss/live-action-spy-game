@@ -1,5 +1,5 @@
 export const WIRETAP_ROUNDS = 3;
-export const WIRETAP_HOLD_SECONDS = 5;
+export const WIRETAP_HOLD_SECONDS = 6;
 
 /** @typedef {1 | 2 | 3} WiretapStation */
 /** @typedef {[number, number]} WiretapCoordinates */
@@ -12,36 +12,40 @@ export const WIRETAP_HOLD_SECONDS = 5;
  * @property {number} jamDurationTicks
  * @property {number} revealPeriodTicks
  * @property {number} revealDurationTicks
+ * @property {number} minimumQuality
  */
 
 /** @type {Readonly<Record<WiretapStation, Readonly<WiretapProfile>>>} */
 export const WIRETAP_PROFILES = Object.freeze({
   1: Object.freeze({
-    tolerance: 6,
+    tolerance: 5,
     driftEveryTicks: 0,
     driftStep: 0,
     jamPeriodTicks: 0,
     jamDurationTicks: 0,
     revealPeriodTicks: 24,
-    revealDurationTicks: 9,
+    revealDurationTicks: 7,
+    minimumQuality: 92,
   }),
   2: Object.freeze({
-    tolerance: 5,
-    driftEveryTicks: 10,
-    driftStep: 1,
+    tolerance: 4,
+    driftEveryTicks: 8,
+    driftStep: 1.25,
     jamPeriodTicks: 0,
     jamDurationTicks: 0,
     revealPeriodTicks: 27,
-    revealDurationTicks: 8,
+    revealDurationTicks: 6,
+    minimumQuality: 93,
   }),
   3: Object.freeze({
-    tolerance: 4,
-    driftEveryTicks: 7,
-    driftStep: 1.5,
+    tolerance: 3.5,
+    driftEveryTicks: 6,
+    driftStep: 1.75,
     jamPeriodTicks: 55,
     jamDurationTicks: 10,
     revealPeriodTicks: 30,
-    revealDurationTicks: 7,
+    revealDurationTicks: 5,
+    minimumQuality: 94,
   }),
 });
 
@@ -109,8 +113,11 @@ export function isWiretapTargetVisible(station, tick) {
 export function isWiretapLocked(controls, target, station, jammed = false) {
   if (jammed) return false;
   const profile = WIRETAP_PROFILES[station] || WIRETAP_PROFILES[1];
-  return wiretapErrors(controls, target).every(
-    (error) => error <= profile.tolerance
+  return (
+    wiretapErrors(controls, target).every(
+      (error) => error <= profile.tolerance
+    ) &&
+    wiretapSignalQuality(controls, target) >= profile.minimumQuality
   );
 }
 

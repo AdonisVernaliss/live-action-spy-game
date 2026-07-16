@@ -3,6 +3,7 @@
   import virus from "$lib/minigames/images/virus.png";
   import { gotoReplace } from "$lib/util";
   import { language } from "$lib/i18n";
+  import { pickVirusDecoyCells } from "$lib/minigames/virusLogic.js";
   import { onDestroy, onMount } from "svelte";
 
   type ThreatKind = "normal" | "fast" | "armored" | "stealth";
@@ -25,6 +26,7 @@
 
   let threats: Threat[] = [];
   let threatByCell = new Map<number, Threat>();
+  let decoyCells = new Set<number>();
   let quarantined = 0;
   let breaches = 0;
   let falsePositives = 0;
@@ -40,6 +42,8 @@
   let tickTimer: ReturnType<typeof setInterval> | null = null;
   let spawnTimer: ReturnType<typeof setTimeout> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let decoyTimer: ReturnType<typeof setTimeout> | null = null;
+  let decoyClearTimer: ReturnType<typeof setTimeout> | null = null;
 
   let bi = (ru: string, _en: string) => ru;
   $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
@@ -51,6 +55,7 @@
   function startGame() {
     cleanup();
     threats = [];
+    decoyCells = new Set();
     quarantined = 0;
     breaches = 0;
     falsePositives = 0;
@@ -65,15 +70,20 @@
     feedback = bi("Сканирование запущено", "Scan started");
     tickTimer = setInterval(tick, 80);
     scheduleThreat(350);
+    scheduleDecoy(900);
   }
 
   function cleanup() {
     if (tickTimer) clearInterval(tickTimer);
     if (spawnTimer) clearTimeout(spawnTimer);
     if (finishTimer) clearTimeout(finishTimer);
+    if (decoyTimer) clearTimeout(decoyTimer);
+    if (decoyClearTimer) clearTimeout(decoyClearTimer);
     tickTimer = null;
     spawnTimer = null;
     finishTimer = null;
+    decoyTimer = null;
+    decoyClearTimer = null;
   }
 
   function tick() {
@@ -103,12 +113,38 @@
     }, delay);
   }
 
+  function scheduleDecoy(delay = 700 + Math.random() * 500) {
+    if (decoyTimer) clearTimeout(decoyTimer);
+    decoyTimer = setTimeout(() => {
+      decoyTimer = null;
+      flashDecoyFiles();
+    }, delay);
+  }
+
+  function flashDecoyFiles() {
+    if (!active) return;
+    const occupied = threats.map((threat) => threat.cell);
+    const count = quarantined >= 8 ? 2 : 1;
+    decoyCells = new Set(
+      pickVirusDecoyCells(CELL_COUNT, occupied, count)
+    );
+
+    decoyClearTimer = setTimeout(() => {
+      decoyClearTimer = null;
+      decoyCells = new Set();
+      if (active) scheduleDecoy();
+    }, 520 + Math.random() * 380);
+  }
+
   function spawnThreat() {
     if (!active) return;
     const maxActive = quarantined < 6 ? 3 : 4;
     if (threats.length >= maxActive) return;
 
-    const occupied = new Set(threats.map((threat) => threat.cell));
+    const occupied = new Set([
+      ...threats.map((threat) => threat.cell),
+      ...decoyCells,
+    ]);
     const freeCells = Array.from({ length: CELL_COUNT }, (_, cell) => cell).filter(
       (cell) => !occupied.has(cell)
     );
@@ -154,7 +190,10 @@
   }
 
   function relocateThreats() {
-    const occupied = new Set(threats.map((threat) => threat.cell));
+    const occupied = new Set([
+      ...threats.map((threat) => threat.cell),
+      ...decoyCells,
+    ]);
     let changed = false;
     const relocated = threats.map((threat) => {
       if (threat.movesRemaining <= 0 || threat.nextMoveAt > now) return threat;
@@ -191,6 +230,9 @@
 
     const threat = threats.find((candidate) => candidate.cell === cell);
     if (!threat) {
+      decoyCells = new Set(
+        [...decoyCells].filter((decoyCell) => decoyCell !== cell)
+      );
       applyMistake(
         bi("Повреждён обычный файл: −1 очко", "Normal file damaged: −1 point")
       );
@@ -255,8 +297,13 @@
     failed = true;
     if (tickTimer) clearInterval(tickTimer);
     if (spawnTimer) clearTimeout(spawnTimer);
+    if (decoyTimer) clearTimeout(decoyTimer);
+    if (decoyClearTimer) clearTimeout(decoyClearTimer);
     tickTimer = null;
     spawnTimer = null;
+    decoyTimer = null;
+    decoyClearTimer = null;
+    decoyCells = new Set();
   }
 </script>
 
@@ -266,8 +313,8 @@
     <h1>{bi("Карантин сети", "Network quarantine")}</h1>
     <p class="description">
       {bi(
-        "Выберите инструмент и удаляйте вирусы до истечения шкалы. Карантин действует на обычные, быстрые и скрытые угрозы; пробой брони — только на защищённые. Обычные файлы не трогайте.",
-        "Choose a tool and remove viruses before their meter expires. Quarantine handles normal, fast, and stealth threats; armor breaker handles armored threats only. Leave normal files alone."
+        "Выберите инструмент и удаляйте вирусы до истечения шкалы. Сканер иногда подсвечивает обычные файлы почти как угрозы — проверяйте значок и подпись перед нажатием.",
+        "Choose a tool and remove viruses before their meter expires. The scanner sometimes makes normal files glow like threats, so check the icon and label before tapping."
       )}
     </p>
 
@@ -307,6 +354,7 @@
           type="button"
           class="node"
           class:infected={threat != null && !cloaked}
+          class:decoy={threat == null && decoyCells.has(cell)}
           class:fast={threat?.kind === "fast"}
           class:armored={threat?.kind === "armored"}
           class:stealth={threat?.kind === "stealth"}
@@ -535,6 +583,21 @@
     animation: infected-pulse 0.55s alternate infinite;
   }
 
+  .node.decoy {
+    border-color: rgba(248, 113, 113, 0.8);
+    background: radial-gradient(circle, rgba(127, 29, 29, 0.48), #130706);
+    animation: decoy-pulse 0.24s alternate infinite;
+  }
+
+  .node.decoy img {
+    opacity: 0.92;
+    filter: saturate(1.4) drop-shadow(0 0 9px rgba(248, 113, 113, 0.85));
+  }
+
+  .node.decoy .safe {
+    color: #fecaca;
+  }
+
   .node.infected img {
     opacity: 1;
     filter: none;
@@ -670,6 +733,15 @@
 
   @keyframes infected-pulse {
     to { box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.28); }
+  }
+
+  @keyframes decoy-pulse {
+    to {
+      border-color: #fca5a5;
+      box-shadow:
+        inset 0 0 24px rgba(239, 68, 68, 0.34),
+        0 0 12px rgba(239, 68, 68, 0.2);
+    }
   }
 
   @keyframes stealth-glitch {

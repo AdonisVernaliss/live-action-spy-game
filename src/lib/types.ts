@@ -49,6 +49,15 @@ export type Lobby = {
     startedAt: number | null;
   };
   playerSync: PlayerSyncView;
+  virusScan:
+  | { state: "inactive" }
+  | {
+    state: "active";
+    prepareRemainingMs: number;
+    scanRemainingMs: number;
+    deadlineRemainingMs: number;
+    paused: boolean;
+  };
 };
 
 export type PlayerSyncView =
@@ -106,6 +115,8 @@ export type Player = {
   | {
     activity: "fixFirewall";
     number: 0 | 1;
+    readyAt: number;
+    readyInMs: number;
   }
   | {
     activity: "awaitingSync";
@@ -224,6 +235,9 @@ export type GameAction =
   }
   | {
     action: "virusScanFailed";
+  }
+  | {
+    action: "virusScanCompleted";
   };
 
 export type GameActionResult =

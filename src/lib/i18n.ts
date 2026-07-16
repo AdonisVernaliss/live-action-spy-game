@@ -289,6 +289,18 @@ const messages: Record<Language, Record<string, string>> = {
     "virus.moved": "Проверка заметила движение. Задания заблокированы на {seconds} сек.",
     "virus.active": "Вирусная проверка: {seconds} сек.",
     "virus.still": "Не двигайтесь…",
+    "virus.badge": "ПРОВЕРКА СТАБИЛЬНОСТИ",
+    "virus.prepareTitle": "Приготовьтесь",
+    "virus.activeTitle": "Замрите",
+    "virus.failedTitle": "Движение обнаружено",
+    "virus.passedTitle": "Проверка пройдена",
+    "virus.passed": "Система не обнаружила движения.",
+    "virus.sensorEnable": "Включить датчик движения",
+    "virus.sensorWaiting": "Запрос разрешения…",
+    "virus.sensorActive": "Датчик движения активен.",
+    "virus.hold": "ЗАЖМИТЕ И НЕ ОТПУСКАЙТЕ",
+    "virus.holding": "УДЕРЖИВАЙТЕ…",
+    "virus.holdHint": "Резервный режим: удерживайте кнопку до завершения проверки. Отпускание считается движением.",
     "meeting.waiting": "Ожидание остальных участников собрания…",
     "connection.offline": "Нет подключения к сети. Игра восстановится автоматически.",
     "connection.reconnecting": "Соединение потеряно. Переподключение…",
@@ -588,6 +600,18 @@ const messages: Record<Language, Record<string, string>> = {
     "virus.moved": "Movement detected. Tasks are locked for {seconds}s.",
     "virus.active": "Virus scan: {seconds}s.",
     "virus.still": "Do not move…",
+    "virus.badge": "STABILITY CHECK",
+    "virus.prepareTitle": "Get ready",
+    "virus.activeTitle": "Hold still",
+    "virus.failedTitle": "Movement detected",
+    "virus.passedTitle": "Scan complete",
+    "virus.passed": "The system detected no movement.",
+    "virus.sensorEnable": "Enable motion sensor",
+    "virus.sensorWaiting": "Requesting permission…",
+    "virus.sensorActive": "Motion sensor active.",
+    "virus.hold": "PRESS AND KEEP HOLDING",
+    "virus.holding": "KEEP HOLDING…",
+    "virus.holdHint": "Fallback mode: hold the button until the scan finishes. Releasing it counts as movement.",
     "meeting.waiting": "Waiting for the other meeting participants…",
     "connection.offline": "No network connection. The game will recover automatically.",
     "connection.reconnecting": "Connection lost. Reconnecting…",
@@ -705,11 +729,17 @@ const serverMessagesEn: Record<string, string> = {
   "Сначала завершите или отмените текущее действие.":
     "Finish or cancel the current action first.",
   "Сначала начните восстановление защиты.": "Start restoring the firewall first.",
+  "Завершите восстановление на том же терминале защиты.":
+    "Finish the repair at the same firewall terminal.",
+  "Снова отсканируйте терминал защиты.":
+    "Scan the firewall terminal again.",
   "Не удалось завершить восстановление защиты.":
     "Could not finish restoring the firewall.",
   "Не удалось запустить саботаж.": "Could not launch sabotage.",
   "Не удалось применить наказание вирусной проверки.":
     "Could not apply the virus scan penalty.",
+  "Не удалось завершить вирусную проверку.":
+    "Could not complete the virus scan.",
   "Активная сессия лобби не найдена.": "Active lobby session not found.",
   "Эта сессия заменена новым подключением.":
     "This session was replaced by a new connection.",
@@ -818,6 +848,11 @@ const serverMessagesEn: Record<string, string> = {
     "The virus scan is unavailable outside an active round.",
   "Для этого игрока нет активной вирусной проверки":
     "There is no active virus scan for this player.",
+  "Время вирусной проверки истекло": "The virus scan has expired.",
+  "Вирусная проверка ещё не завершена": "The virus scan is not finished yet.",
+  "Вирусная проверка неприменима": "The virus scan does not apply to this player.",
+  "Нет свободных оперативников для вирусной проверки":
+    "There are no available operatives for a virus scan.",
   "Другой саботаж уже активен": "Another sabotage is already active.",
   "Игра не запущена": "The game has not started.",
   "Игра уже началась и не принимает новых игроков":
@@ -896,6 +931,10 @@ export function localizeServerMessage(
     .replace(
       /^Саботаж восстанавливается: (\d+) сек\.$/,
       "Sabotage cooldown: $1s."
+    )
+    .replace(
+      /^Оставайтесь у терминала ещё (\d+) сек\.$/,
+      "Stay at the terminal for another $1s."
     )
     .replace(/^Неизвестный вид саботажа: (.+)$/, "Unknown sabotage type: $1")
     .replace(

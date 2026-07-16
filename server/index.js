@@ -9,7 +9,11 @@ import {
 } from "./lobbies.js";
 import { playerNameValid } from "./player.js";
 import { config } from "./config.js";
-import { TEST_MODE_MIN_PLAYERS } from "./consts.js";
+import {
+  FIREWALL_REPAIR_HOLD_MS,
+  TEST_MODE_MIN_PLAYERS,
+  TEST_MODE_TIMERS,
+} from "./consts.js";
 
 io.on("connection", (client) => {
   console.debug(`Client connected ${client.id}`);
@@ -355,6 +359,13 @@ io.on("connection", (client) => {
       }
 
       case "clearCurrentActivity":
+        if (currentPlayer.currentlyDoing.activity === "fixFirewall") {
+          reject(
+            "FIREWALL_REPAIR_ACTIVE",
+            "Завершите восстановление на том же терминале защиты."
+          );
+          break;
+        }
         if (
           currentPlayer.currentlyDoing.activity === "awaitingSync" ||
           currentPlayer.currentlyDoing.activity === "playerSync"
@@ -559,7 +570,14 @@ io.on("connection", (client) => {
           reject("NO_FIREWALL_BREACH", "Активного взлома защиты нет.");
         } else if (info.number !== 0 && info.number !== 1) {
           reject("INVALID_FIREWALL", "Неизвестный терминал защиты.");
-        } else if (currentPlayer.startFirewallFix(info.number)) {
+        } else if (
+          currentPlayer.startFirewallFix(
+            info.number,
+            playerLobby.testMode.enabled
+              ? TEST_MODE_TIMERS.firewallRepairHoldMs
+              : FIREWALL_REPAIR_HOLD_MS
+          )
+        ) {
           playerLobby.synchronize();
           accept();
         } else {
@@ -569,6 +587,9 @@ io.on("connection", (client) => {
       }
 
       case "finishFirewallFix": {
+        const repairSecondsLeft = currentPlayer.firewallRepairSecondsLeft(
+          info.number
+        );
         if (playerLobby.status.state !== "started") {
           reject("INVALID_GAME_STATE", "Защиту можно восстанавливать только во время раунда.");
         } else if (currentPlayer.status !== "alive") {
@@ -577,8 +598,15 @@ io.on("connection", (client) => {
           reject("NO_FIREWALL_BREACH", "Активного взлома защиты нет.");
         } else if (info.number !== 0 && info.number !== 1) {
           reject("INVALID_FIREWALL", "Неизвестный терминал защиты.");
-        } else if (!currentPlayer.finishFirewallFix(info.number)) {
+        } else if (repairSecondsLeft == null) {
           reject("FIREWALL_FIX_NOT_ACTIVE", "Сначала начните восстановление защиты.");
+        } else if (repairSecondsLeft > 0) {
+          reject(
+            "FIREWALL_REPAIR_IN_PROGRESS",
+            `Оставайтесь у терминала ещё ${repairSecondsLeft} сек.`
+          );
+        } else if (!currentPlayer.finishFirewallFix(info.number)) {
+          reject("FIREWALL_FIX_NOT_ACTIVE", "Снова отсканируйте терминал защиты.");
         } else {
           applyResult(playerLobby.pressFirewallButton(info.number), "Не удалось завершить восстановление защиты.");
         }
@@ -593,6 +621,13 @@ io.on("connection", (client) => {
         applyResult(
           playerLobby.applyVirusPenalty(currentPlayer.color),
           "Не удалось применить наказание вирусной проверки."
+        );
+        break;
+
+      case "virusScanCompleted":
+        applyResult(
+          playerLobby.completeVirusScan(currentPlayer.color),
+          "Не удалось завершить вирусную проверку."
         );
         break;
 
