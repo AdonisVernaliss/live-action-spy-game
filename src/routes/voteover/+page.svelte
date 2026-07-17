@@ -84,16 +84,24 @@
 
     return $t("vote.ejectedText");
   }
+
+  $: voteResults = getVoteResults();
+  $: maxVotes = Math.max(1, ...voteResults.map(([, count]) => count));
 </script>
 
 {#if $lobbyStore != null && $lobbyStore.status.state === "voteResultAnnounced"}
   <main class="voteover-page">
     <section class="voteover-card">
-      <p class="eyebrow">{$t("vote.result")}</p>
-
-      <h1>{getVotedOutText()}</h1>
-
-      <p class="description">{getVotedOutSubtext()}</p>
+      <header class="result-hero">
+        <div class="result-symbol" aria-hidden="true">
+          {$lobbyStore.status.votedOutPlayer == null ? "=" : "↓"}
+        </div>
+        <div>
+          <p class="eyebrow">{$t("vote.result")}</p>
+          <h1>{getVotedOutText()}</h1>
+          <p class="description">{getVotedOutSubtext()}</p>
+        </div>
+      </header>
 
       <div class="task-box">
         <p class="section-title">{$t("vote.progress")}</p>
@@ -103,23 +111,28 @@
       <div class="results-box">
         <p class="section-title">{$t("vote.votes")}</p>
 
-        {#if getVoteResults().length === 0}
+        {#if voteResults.length === 0}
           <p class="muted">{$t("vote.noVotes")}</p>
         {:else}
           <div class="results-list">
-            {#each getVoteResults() as [vote, nVotes]}
+            {#each voteResults as [vote, nVotes]}
               <div class="result-row">
-                {#if vote === "skip"}
-                  <span class="skip-dot">–</span>
-                {:else}
-                  <span class={COLORS[vote] + " color-dot"} />
-                {/if}
+                <div class="result-heading">
+                  {#if vote === "skip"}
+                    <span class="skip-dot">–</span>
+                  {:else}
+                    <span class={COLORS[vote] + " color-dot"} />
+                  {/if}
 
-                <span class="result-name">{getPlayerName(vote)}</span>
+                  <span class="result-name">{getPlayerName(vote)}</span>
 
-                <span class="vote-count">
-                  {nVotes} {nVotes === 1 ? $t("vote.voteOne") : $t("vote.voteMany")}
-                </span>
+                  <span class="vote-count">
+                    {nVotes} {nVotes === 1 ? $t("vote.voteOne") : $t("vote.voteMany")}
+                  </span>
+                </div>
+                <div class="vote-bar" aria-hidden="true">
+                  <span style={`width:${(nVotes / maxVotes) * 100}%`}></span>
+                </div>
               </div>
             {/each}
           </div>
@@ -127,15 +140,16 @@
       </div>
 
       <div class="return-box">
-        <p>
-          {$t("vote.nextRound", { seconds: $lobbyStore.status.countDown })}
-        </p>
+        <div class="return-countdown">{$lobbyStore.status.countDown}</div>
+        <div>
+          <p>{$t("vote.nextRound", { seconds: $lobbyStore.status.countDown })}</p>
 
-        {#if $playerStore?.status === "alive"}
-          <p class="muted">{$t("vote.returnGame")}</p>
-        {:else}
-          <p class="muted">{$t("vote.returnGhost")}</p>
-        {/if}
+          {#if $playerStore?.status === "alive"}
+            <p class="muted">{$t("vote.returnGame")}</p>
+          {:else}
+            <p class="muted">{$t("vote.returnGhost")}</p>
+          {/if}
+        </div>
       </div>
     </section>
   </main>
@@ -150,9 +164,13 @@
   .voteover-page {
     min-height: var(--app-height);
     width: 100%;
-    padding: 20px;
+    padding:
+      max(70px, calc(var(--safe-top) + 58px))
+      max(14px, var(--safe-right))
+      max(20px, var(--safe-bottom))
+      max(14px, var(--safe-left));
     background:
-      radial-gradient(circle at top, rgba(34, 197, 94, 0.14), transparent 30rem),
+      radial-gradient(circle at 50% 10%, rgba(56, 189, 248, 0.12), transparent 28rem),
       #000;
     color: white;
     display: flex;
@@ -163,33 +181,55 @@
   .voteover-card {
     width: 100%;
     max-width: 520px;
-    padding: 24px;
-    border-radius: 26px;
+    padding: clamp(18px, 5vw, 26px);
+    border-radius: 28px;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(8, 8, 8, 0.94);
+    background: rgba(6, 10, 14, 0.95);
     box-shadow: 0 24px 90px rgba(0, 0, 0, 0.55);
+  }
+
+  .result-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 14px;
+  }
+
+  .result-symbol {
+    width: 54px;
+    height: 54px;
+    border: 1px solid rgba(125, 211, 252, 0.3);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(14, 116, 144, 0.11);
+    color: #7dd3fc;
+    font-size: 25px;
+    font-weight: 950;
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.08);
   }
 
   .eyebrow {
     margin: 0;
-    color: rgba(255, 255, 255, 0.55);
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
+    color: #7dd3fc;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
   }
 
   h1 {
-    margin: 8px 0 14px;
-    font-size: 32px;
-    line-height: 1.1;
-    font-weight: 900;
+    margin: 6px 0 7px;
+    font-size: clamp(25px, 7vw, 35px);
+    line-height: 1.05;
+    font-weight: 950;
+    letter-spacing: -0.035em;
   }
 
   .description {
-    margin: 0 0 20px;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 15px;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 12px;
     line-height: 1.45;
   }
 
@@ -205,9 +245,9 @@
   .task-box,
   .results-box,
   .return-box {
-    margin-top: 16px;
-    padding: 16px;
-    border-radius: 18px;
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 17px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.055);
   }
@@ -215,14 +255,19 @@
   .results-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
 
   .result-row {
+    display: grid;
+    gap: 7px;
+  }
+
+  .result-heading {
+    min-width: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 0;
+    gap: 9px;
   }
 
   .color-dot,
@@ -252,10 +297,47 @@
     font-weight: 800;
   }
 
+  .vote-bar {
+    height: 5px;
+    margin-left: 23px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .vote-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0e7490, #38bdf8, #bae6fd);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    transition: width 300ms ease;
+  }
+
   .return-box p {
     margin: 0;
     font-size: 14px;
     line-height: 1.45;
+  }
+
+  .return-box {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+  }
+
+  .return-countdown {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(125, 211, 252, 0.26);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(14, 116, 144, 0.08);
+    color: white;
+    font-size: 17px;
+    font-weight: 950;
   }
 
   .muted {
@@ -266,5 +348,9 @@
 
   .return-box .muted {
     margin-top: 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vote-bar span { transition: none; }
   }
 </style>

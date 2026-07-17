@@ -23,7 +23,7 @@
 
 Protocol 150 turns a house, office, event space, or other indoor venue into a live spy operation. Players move between real locations, scan NFC tags or QR codes, complete interactive tasks, and try to identify infiltrated agents hiding inside the team.
 
-Most participants are **Operatives**. They complete assignments, respond to sabotage, report eliminated players, and vote during meetings. A smaller hidden group becomes **Infiltrated Agents**. They blend into the operation, fake tasks, launch sabotage, and covertly eliminate operatives during an apparently normal player-to-player synchronization.
+Most participants are **Operatives**. They complete assignments, respond to sabotage, report eliminated players, and vote during meetings. A smaller hidden group becomes **Infiltrated Agents**. They blend into the operation, fake tasks, launch sabotage, and hide an instant elimination gesture inside an ordinary player interaction.
 
 The repository is named `live-action-spy-game`; the public game title remains **Protocol 150**.
 
@@ -58,7 +58,7 @@ The repository is named `live-action-spy-game`; the public game title remains **
 - Fifteen configurable physical activity points plus an optional secret-task point.
 - Ten interactive minigames with a separate host-side test launcher.
 - Mandatory mutual player scanning before personal tasks unlock.
-- Covert eliminations hidden inside a normal 15-second synchronization.
+- A server-authorized covert interaction: tap the neutral player button for a safe synchronization or hold it for 0.7 seconds to eliminate when the cooldown is ready.
 - Emergency meetings, body reports, voting, ghost mode, sabotage, and two-team victory conditions.
 - A protected host panel with venue preflight, pause, recovery, diagnostics, test tools, and manual match controls.
 - Runtime lobby snapshots for recovery after an accidental server restart.
@@ -137,23 +137,26 @@ They can:
 - move through the same venue and imitate ordinary task behavior;
 - launch sabotage after the server-controlled cooldown;
 - begin a normal-looking synchronization with another player;
-- secretly select elimination while the target sees an ordinary progress screen;
+- scan an idle or task-busy operative and hold the same neutral interaction button for 0.7 seconds to eliminate instantly;
+- tap that button normally to begin a real safe synchronization if they want to avoid suspicion;
 - participate in discussion and redirect suspicion.
 
 An agent cannot eliminate another agent. A dedicated host has no role, tasks, vote, readiness requirement, or effect on team balance.
 
 ## Player synchronization
 
-Player interaction is intentionally symmetrical so that approaching another player does not immediately reveal an agent.
+Player interaction uses the same neutral scan screen for every role, so approaching another player does not immediately reveal an agent.
 
 1. Player A scans Player B's personal NFC tag or QR code.
-2. Player B has 30 seconds to scan Player A.
-3. Both devices open the same progress screen.
-4. The synchronization runs for 15 seconds and shows a shared percentage.
-5. A normal synchronization unlocks tasks for both players.
-6. If an agent selected the covert action, the target is eliminated only when the progress reaches 100%.
+2. A normal tap sends a safe synchronization request.
+3. Player B has 30 seconds to scan Player A and accept with the same normal tap.
+4. Both devices open the same progress screen.
+5. The synchronization runs for 15 seconds and shows a shared percentage.
+6. Completion unlocks tasks for both players; synchronization itself can never eliminate either participant.
 
 The active interaction cannot be cancelled midway. A meeting, match pause, or game end safely interrupts it. Test mode shortens the synchronization to three seconds.
+
+When the normal kill cooldown has expired, an agent can instead hold that visually identical neutral button for 0.7 seconds. The target is eliminated immediately after the server confirms the uninterrupted hold; no prior synchronization or limited-use charge is required. Releasing early performs the ordinary safe tap, while pointer cancellation or leaving the button cancels the hidden attempt. The server rejects shortened, stale, mismatched, teammate-targeted, paused, or otherwise invalid attempts. A meeting, pause, disconnect, role change, death, task start, restart recovery, or game end clears every pending hold. NFC and direct-opening QR codes use the same server state, so neither scan method bypasses these checks.
 
 ## Tasks and physical points
 
@@ -447,15 +450,18 @@ npm run build
 
 The server tests cover critical multiplayer rules including:
 
+- a complete five-player operation with a dedicated host, all sabotage types, a covert elimination, body report, meeting, voting, and victory;
 - mutual player synchronization;
-- covert elimination at synchronization completion;
-- interruption by meetings;
+- safe synchronization with no hidden elimination outcome;
+- server-timed 0.7-second elimination holds, early cancellation, shared cooldown, and task-station release;
+- interruption of synchronization and pending holds by meetings;
 - agent-to-agent protection;
 - firewall and virus sabotage;
 - body reports;
 - host-only participation rules;
-- pause and lobby persistence behavior.
-- venue import validation, unique physical tags, and QR/NFC preflight persistence.
+- pause and lobby persistence behavior;
+- venue import validation, unique physical tags, and QR/NFC preflight persistence;
+- enabled UI buttons having action handlers and all ten standard minigames reaching their completion route.
 
 Automated checks cannot verify NFC antenna placement, camera focus, browser permissions, Wi-Fi coverage, or real-world responsive layout. Those require a physical multi-device pass.
 

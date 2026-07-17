@@ -22,18 +22,17 @@
     left: max(10px, var(--safe-left));
     min-height: 38px;
     padding: 7px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 999px;
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba(10, 10, 10, 0.9);
+    background: rgba(10, 10, 10, 0.28);
     color: rgba(255, 255, 255, 0.45);
     font-size: 10px;
     font-weight: 950;
     letter-spacing: 0.05em;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
   }
 
   .language-toggle i {

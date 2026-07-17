@@ -48,6 +48,7 @@ export type Lobby = {
     active: boolean;
     startedAt: number | null;
   };
+  taskStations: TaskStationView[];
   playerSync: PlayerSyncView;
   virusScan:
   | { state: "inactive" }
@@ -58,6 +59,15 @@ export type Lobby = {
     deadlineRemainingMs: number;
     paused: boolean;
   };
+};
+
+export type TaskStationView = {
+  key: string;
+  taskNumber: number;
+  taskTag?: string;
+  playerColor: Color;
+  playerName: string;
+  remainingMs: number;
 };
 
 export type PlayerSyncView =
@@ -108,6 +118,7 @@ export type Player = {
   | {
     activity: "task";
     number: number;
+    taskTag?: string;
   }
   | {
     activity: "nothing";
@@ -141,7 +152,7 @@ export type NfcActivities = {
 
 // `null` means the effect is not active
 export type ActiveEffects = {
-  hacked: { affectedPlayers: Color[] } | null;
+  hacked: { affectedPlayers: Color[]; countDown: number } | null;
   firewallBreach: {
     buttonsPressed: {
       firewallbutton1: boolean;
@@ -198,9 +209,18 @@ export type GameAction =
     targetColor: Color;
   }
   | {
+    action: "silentKillPlayer";
+    targetColor: Color;
+  }
+  | {
+    action: "beginSilentEliminationHold";
+    targetColor: Color;
+  }
+  | { action: "cancelSilentEliminationHold" }
+  | {
     action: "requestPlayerSync";
     targetColor: Color;
-    mode: "sync" | "eliminate";
+    mode: "sync";
   }
   | { action: "cancelPlayerSync" }
   | {
@@ -216,6 +236,10 @@ export type GameAction =
     action: "taskCompleted";
     taskNumber: number;
     taskTag?: string;
+  }
+  | {
+    action: "toggleAgentTask";
+    taskNumber: number;
   }
   | {
     action: "finishFirewallFix";

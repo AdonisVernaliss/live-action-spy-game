@@ -5,7 +5,7 @@
 
   const GRID_SIZE = 6;
   const CELL_COUNT = GRID_SIZE * GRID_SIZE;
-  const GAME_TIME = 75;
+  const GAME_TIME = 120;
   const N = 1;
   const E = 2;
   const S = 4;

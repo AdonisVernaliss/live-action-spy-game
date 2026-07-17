@@ -15,7 +15,7 @@
   import { onMount } from "svelte";
   import "../app.postcss";
   import { page } from "$app/stores";
-  import type { Color } from "$lib/types";
+  import type { ActiveEffects, Color } from "$lib/types";
   import { gotoReplace } from "$lib/util";
   import type { Socket } from "socket.io-client";
   import LanguageToggle from "$lib/LanguageToggle.svelte";
@@ -321,9 +321,11 @@
       ({
         cooldowns,
         firewall,
+        hacked,
       }: {
         cooldowns: Record<string, any>;
         firewall: number | null;
+        hacked: ActiveEffects["hacked"];
       }) => {
         lobbyStore.update((lobby) => {
           if (lobby != null) {
@@ -343,6 +345,8 @@
             ) {
               lobby.activeEffects.firewallBreach.countDown = firewall;
             }
+
+            if (hacked !== undefined) lobby.activeEffects.hacked = hacked;
           }
 
           return lobby;
@@ -454,16 +458,27 @@
         gameState,
       });
 
-      if (isRouteProtectedFromGameRedirect($page.route.id)) {
-        return;
-      }
-
       if (
         gameState === "meetingCalled" ||
         gameState === "meeting" ||
         gameState === "voteResultAnnounced" ||
         gameState === "gameEnded"
       ) {
+        return;
+      }
+
+      if (gameState === "started") {
+        if (player.status === "foundDead") {
+          if ($page.route.id !== "/dead") gotoReplace("/dead");
+          return;
+        }
+        if (player.status === "dead") {
+          if ($page.route.id !== "/killed") gotoReplace("/killed");
+          return;
+        }
+      }
+
+      if (isRouteProtectedFromGameRedirect($page.route.id)) {
         return;
       }
 
@@ -544,6 +559,13 @@
 
   $: displayPauseOverlay =
     $lobbyStore?.pause?.active === true && $page.route.id !== "/admin";
+  $: displayHackOverlay =
+    $lobbyStore?.activeEffects.hacked?.affectedPlayers.includes(
+      $playerColorStore as Color
+    ) === true &&
+    $playerStore?.status === "alive" &&
+    $lobbyStore?.status.state === "started" &&
+    !displayPauseOverlay;
 </script>
 
 <svelte:head>
@@ -589,6 +611,22 @@
     </div>
   {/if}
 
+  {#if displayHackOverlay && $lobbyStore?.activeEffects.hacked}
+    <div class="hack-overlay" role="status" aria-live="assertive">
+      <div class="hack-noise" aria-hidden="true" />
+      <div class="hack-card">
+        <span>{$language === "en" ? "SIGNAL COMPROMISED" : "СИГНАЛ СКОМПРОМЕТИРОВАН"}</span>
+        <h2>{$language === "en" ? "Controls locked" : "Управление заблокировано"}</h2>
+        <strong>{$lobbyStore.activeEffects.hacked.countDown}</strong>
+        <p>
+          {$language === "en"
+            ? "Scanner interference detected. Wait for the secure channel to recover."
+            : "Обнаружены помехи сканера. Дождитесь восстановления защищённого канала."}
+        </p>
+      </div>
+    </div>
+  {/if}
+
   <slot />
 
   {#if dev && showDevPanel}
@@ -630,6 +668,92 @@
     place-items: center;
     background: rgba(0, 0, 0, 0.88);
     backdrop-filter: blur(10px);
+  }
+
+  .hack-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    padding: max(18px, var(--safe-top)) max(18px, var(--safe-right))
+      max(18px, var(--safe-bottom)) max(18px, var(--safe-left));
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: rgba(3, 7, 18, 0.96);
+  }
+
+  .hack-noise {
+    position: absolute;
+    inset: -20%;
+    opacity: 0.18;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0 3px,
+      rgba(34, 211, 238, 0.55) 3px 4px,
+      transparent 4px 8px
+    );
+    animation: hack-scan 0.22s steps(2) infinite;
+  }
+
+  .hack-card {
+    position: relative;
+    width: min(100%, 430px);
+    padding: clamp(24px, 7vw, 38px);
+    border: 1px solid rgba(34, 211, 238, 0.55);
+    border-radius: 8px;
+    background: rgba(4, 18, 28, 0.96);
+    text-align: center;
+    box-shadow:
+      10px 0 0 rgba(239, 68, 68, 0.12),
+      -10px 0 0 rgba(34, 211, 238, 0.12),
+      0 24px 90px rgba(0, 0, 0, 0.7);
+    animation: hack-glitch 0.9s steps(2) infinite;
+  }
+
+  .hack-card span {
+    color: #67e8f9;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.16em;
+  }
+
+  .hack-card h2 {
+    margin: 12px 0 4px;
+    font-size: clamp(23px, 7vw, 34px);
+    font-weight: 950;
+  }
+
+  .hack-card strong {
+    display: block;
+    color: #f87171;
+    font-size: clamp(58px, 20vw, 94px);
+    line-height: 1;
+    text-shadow: 3px 0 #22d3ee, -3px 0 rgba(239, 68, 68, 0.8);
+  }
+
+  .hack-card p {
+    margin: 12px 0 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  @keyframes hack-scan {
+    to { transform: translateY(8px); }
+  }
+
+  @keyframes hack-glitch {
+    48% { transform: translateX(0); }
+    50% { transform: translateX(3px); }
+    52% { transform: translateX(-2px); }
+    54% { transform: translateX(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hack-noise,
+    .hack-card {
+      animation: none;
+    }
   }
 
   .pause-card {

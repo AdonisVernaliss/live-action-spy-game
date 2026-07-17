@@ -3,7 +3,12 @@
   import virus from "$lib/minigames/images/virus.png";
   import { gotoReplace } from "$lib/util";
   import { language } from "$lib/i18n";
-  import { pickVirusDecoyCells } from "$lib/minigames/virusLogic.js";
+  import {
+    getVirusSpawnDelay,
+    getVirusWave,
+    pickVirusDecoyCells,
+    pickVirusKind,
+  } from "$lib/minigames/virusLogic.js";
   import { onDestroy, onMount } from "svelte";
 
   type ThreatKind = "normal" | "fast" | "armored" | "stealth";
@@ -36,6 +41,8 @@
   let now = Date.now();
   let deadline = 0;
   let nextThreatId = 1;
+  let lastAnnouncedWave = 1;
+  let armoredIntroduced = false;
   let active = false;
   let failed = false;
   let feedback = "";
@@ -48,6 +55,8 @@
   let bi = (ru: string, _en: string) => ru;
   $: bi = (ru: string, en: string) => ($language === "en" ? en : ru);
   $: threatByCell = new Map(threats.map((threat) => [threat.cell, threat]));
+  $: wave = getVirusWave(quarantined);
+  $: armoredThreatPresent = threats.some((threat) => threat.kind === "armored");
 
   onMount(startGame);
   onDestroy(cleanup);
@@ -65,12 +74,14 @@
     now = Date.now();
     deadline = now + GAME_TIME * 1000;
     nextThreatId = 1;
+    lastAnnouncedWave = 1;
+    armoredIntroduced = false;
     active = true;
     failed = false;
-    feedback = bi("Сканирование запущено", "Scan started");
+    feedback = bi("Обучающая волна: одна медленная угроза", "Training wave: one slow threat");
     tickTimer = setInterval(tick, 80);
-    scheduleThreat(350);
-    scheduleDecoy(900);
+    scheduleThreat(1400);
+    scheduleDecoy(6000);
   }
 
   function cleanup() {
@@ -104,12 +115,12 @@
     if (breaches >= MAX_BREACHES || timeLeft <= 0) failGame();
   }
 
-  function scheduleThreat(delay = 500 + Math.random() * 320) {
+  function scheduleThreat(delay = getVirusSpawnDelay(quarantined)) {
     if (spawnTimer) clearTimeout(spawnTimer);
     spawnTimer = setTimeout(() => {
       spawnTimer = null;
       spawnThreat();
-      if (active) scheduleThreat();
+      if (active) scheduleThreat(getVirusSpawnDelay(quarantined));
     }, delay);
   }
 
@@ -123,8 +134,13 @@
 
   function flashDecoyFiles() {
     if (!active) return;
+    const currentWave = getVirusWave(quarantined);
+    if (currentWave.number === 1) {
+      scheduleDecoy(1800);
+      return;
+    }
     const occupied = threats.map((threat) => threat.cell);
-    const count = quarantined >= 8 ? 2 : 1;
+    const count = currentWave.number >= 4 ? 2 : 1;
     decoyCells = new Set(
       pickVirusDecoyCells(CELL_COUNT, occupied, count)
     );
@@ -138,8 +154,8 @@
 
   function spawnThreat() {
     if (!active) return;
-    const maxActive = quarantined < 6 ? 3 : 4;
-    if (threats.length >= maxActive) return;
+    const currentWave = getVirusWave(quarantined);
+    if (threats.length >= currentWave.maxActive) return;
 
     const occupied = new Set([
       ...threats.map((threat) => threat.cell),
@@ -150,23 +166,28 @@
     );
     if (freeCells.length === 0) return;
 
-    const roll = Math.random();
-    const kind: ThreatKind =
-      quarantined >= 7 && roll < 0.18
-        ? "stealth"
-        : quarantined >= 3 && roll < 0.43
-          ? "fast"
-          : quarantined >= 5 && roll > 0.76
-            ? "armored"
-            : "normal";
+    if (currentWave.number > lastAnnouncedWave) {
+      lastAnnouncedWave = currentWave.number;
+      feedback = waveDescription(currentWave.number);
+    }
+
+    let kind: ThreatKind = pickVirusKind(quarantined) as ThreatKind;
+    if (currentWave.number >= 2 && !armoredIntroduced) {
+      kind = "armored";
+      armoredIntroduced = true;
+      feedback = bi(
+        "СИНЯЯ БРОНЯ: выберите «Пробой брони»",
+        "BLUE ARMOR: select Armor breaker"
+      );
+    }
     const lifetime =
       kind === "fast"
-        ? 1550
+        ? currentWave.number <= 2 ? 2400 : 1850
         : kind === "armored"
-          ? 3500
+          ? 5000
           : kind === "stealth"
-            ? 3200
-            : 2300;
+            ? 3600
+            : currentWave.number === 1 ? 4200 : 2900;
     const spawnedAt = Date.now();
 
     threats = [
@@ -278,6 +299,13 @@
     return bi("ВИРУС", "VIRUS");
   }
 
+  function waveDescription(number: number) {
+    if (number === 1) return bi("Обучение: обычные вирусы", "Training: normal viruses");
+    if (number === 2) return bi("Этап 2: броня и быстрые угрозы", "Wave 2: armor and fast threats");
+    if (number === 3) return bi("Этап 3: скрытые угрозы", "Wave 3: stealth threats");
+    return bi("Этап 4: максимальная нагрузка", "Wave 4: maximum load");
+  }
+
   function isThreatVisible(threat: Threat) {
     if (threat.kind !== "stealth") return true;
     return (now - threat.spawnedAt) % 850 < 360;
@@ -313,8 +341,8 @@
     <h1>{bi("Карантин сети", "Network quarantine")}</h1>
     <p class="description">
       {bi(
-        "Выберите инструмент и удаляйте вирусы до истечения шкалы. Сканер иногда подсвечивает обычные файлы почти как угрозы — проверяйте значок и подпись перед нажатием.",
-        "Choose a tool and remove viruses before their meter expires. The scanner sometimes makes normal files glow like threats, so check the icon and label before tapping."
+        "Нагрузка растёт постепенно. Красные, жёлтые и фиолетовые угрозы удаляются карантином; синие узлы со щитом ◆ — только пробоем брони.",
+        "The load increases gradually. Red, yellow, and purple threats use Quarantine; blue nodes with a ◆ shield require Armor breaker."
       )}
     </p>
 
@@ -323,6 +351,18 @@
       <div><small>{bi("Прорывы", "Breaches")}</small><strong class:danger={breaches > 0}>{breaches}/{MAX_BREACHES}</strong></div>
       <div><small>{bi("Ошибки", "Mistakes")}</small><strong>{falsePositives}</strong></div>
       <div><small>{bi("Время", "Time")}</small><strong>{timeLeft}s</strong></div>
+    </div>
+
+    <div class="wave-panel">
+      <div>
+        <small>{bi("Интенсивность", "Intensity")}</small>
+        <strong>{waveDescription(wave.number)}</strong>
+      </div>
+      <div class="wave-dots" aria-label={bi(`Этап ${wave.number} из 4`, `Wave ${wave.number} of 4`)}>
+        {#each [1, 2, 3, 4] as number}
+          <i class:active={number <= wave.number}></i>
+        {/each}
+      </div>
     </div>
 
     <div class="tool-selector" role="group" aria-label={bi("Инструмент", "Tool")}>
@@ -338,6 +378,7 @@
       <button
         type="button"
         class:active={selectedTool === "breaker"}
+        class:recommended={armoredThreatPresent && selectedTool !== "breaker"}
         on:click={() => (selectedTool = "breaker")}
       >
         <b>◆</b>
@@ -345,6 +386,16 @@
         <small>{bi("только броня", "armored only")}</small>
       </button>
     </div>
+
+    {#if armoredThreatPresent}
+      <div class="armor-alert" role="status">
+        <b>◆</b>
+        <span>{bi(
+          "БРОНИРОВАННЫЙ ВИРУС: нажмите «Пробой брони», затем синий узел со щитом.",
+          "ARMORED VIRUS: tap Armor breaker, then the blue shielded node."
+        )}</span>
+      </div>
+    {/if}
 
     <div class="scan-grid">
       {#each Array(CELL_COUNT) as _, cell}
@@ -481,6 +532,49 @@
     color: #f87171;
   }
 
+  .wave-panel {
+    margin: -4px 0 9px;
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(74, 222, 128, 0.16);
+    border-radius: 11px;
+    background: rgba(22, 101, 52, 0.1);
+  }
+
+  .wave-panel > div:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .wave-panel strong {
+    min-width: 0;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .wave-dots {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 4px;
+  }
+
+  .wave-dots i {
+    width: 18px;
+    height: 5px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.11);
+  }
+
+  .wave-dots i.active {
+    background: #4ade80;
+    box-shadow: 0 0 7px rgba(74, 222, 128, 0.5);
+  }
+
   .scan-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -514,6 +608,13 @@
     color: white;
   }
 
+  .tool-selector button.recommended {
+    border-color: #60a5fa;
+    background: rgba(30, 64, 175, 0.3);
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.15);
+    animation: armor-tool 0.65s ease-in-out infinite alternate;
+  }
+
   .tool-selector button > b {
     grid-row: 1 / 3;
     color: #86efac;
@@ -531,6 +632,33 @@
     overflow-wrap: anywhere;
     color: rgba(255, 255, 255, 0.42);
     font-size: 7px;
+  }
+
+  .armor-alert {
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    border: 1px solid rgba(96, 165, 250, 0.62);
+    border-radius: 11px;
+    background: rgba(30, 64, 175, 0.28);
+    color: #dbeafe;
+  }
+
+  .armor-alert b {
+    display: grid;
+    place-items: center;
+    color: #93c5fd;
+    font-size: 20px;
+  }
+
+  .armor-alert span {
+    min-width: 0;
+    font-size: 9px;
+    font-weight: 900;
+    line-height: 1.35;
   }
 
   .node {
@@ -748,6 +876,10 @@
     50% { border-color: rgba(192, 132, 252, 0.34); }
   }
 
+  @keyframes armor-tool {
+    to { box-shadow: 0 0 13px rgba(96, 165, 250, 0.36); }
+  }
+
   @media (max-width: 430px) {
     .terminal { padding: 13px; }
     .stats div { padding: 6px; }
@@ -759,8 +891,13 @@
   @media (max-height: 700px) {
     .description { display: none; }
     .stats { margin: 8px 0; }
+    .wave-panel { padding-top: 5px; padding-bottom: 5px; }
     .terminal { padding-top: 13px; padding-bottom: 10px; }
     .footer-status { min-height: 24px; margin-top: 5px; }
     .tool-selector button { padding-top: 5px; padding-bottom: 5px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tool-selector button.recommended { animation: none; }
   }
 </style>

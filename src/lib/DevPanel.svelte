@@ -4,7 +4,6 @@
   import { emitGameAction, getSocketIO } from "./websocket";
   import type { Color } from "./types";
   import { gotoReplace } from "./util";
-  import { KILL_COOLDOWN_SECS, SABO_COOLDOWN_SECS } from "../../server/consts";
   import type { Socket } from "socket.io-client";
   import { onMount } from "svelte";
   import { language } from "$lib/i18n";
@@ -39,16 +38,10 @@
 
   const buttons = [
     { ru: "Сменить роль", en: "Change role", action: () => {
-      const players = { ...$lobbyStore!.players };
       const me = $playerStore!;
-      if (me.role.name === "impostor") me.role = { name: "crew" };
-      else
-        me.role = {
-          name: "impostor",
-          killCooldown: KILL_COOLDOWN_SECS,
-          sabotageCooldown: SABO_COOLDOWN_SECS,
-        };
-      io.emit("devSetLobby", { lobby: { players } });
+      io.emit("devSetPlayerRole", {
+        role: me.role.name === "impostor" ? "crew" : "impostor",
+      });
     }},
     { ru: "Созвать собрание", en: "Call meeting", action: () => gotoReplace("/meetingbutton") },
 

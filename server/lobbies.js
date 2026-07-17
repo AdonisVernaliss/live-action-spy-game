@@ -4,6 +4,8 @@ import {
   EMERGENCY_MEETINGS_PER_PLAYER,
   FIREWALL_COOLDOWN,
   FIREWALL_FIX_TIME,
+  HACKED_SECS,
+  HACK_COOLDOWN,
   KILL_COOLDOWN_SECS,
   MAX_PLAYERS,
   MEETING_BUTTON_CD,
@@ -15,8 +17,12 @@ import {
   PLAYER_COLORS,
   ROLE_DISPLAY_SECS,
   SABO_COOLDOWN_SECS,
+  SILENT_KILL_HOLD_MAX_MS,
+  SILENT_KILL_HOLD_MS,
+  TASKS,
   TASK_PROGRESSION_VICTORY_AMOUNT,
   TASK_PROGRESS_DISPLAY_THRESHOLD,
+  TASK_STATION_LEASE_MS,
   TEST_MODE_MIN_PLAYERS,
   TEST_MODE_TIMERS,
   VOTE_RESULT_DISPLAY_SECS,
@@ -25,6 +31,7 @@ import {
   VIRUS_SCAN_PREPARE_SECS,
   VIRUS_SCAN_RESULT_GRACE_MS,
   VIRUS_SCAN_TIME,
+  WIRETAP_CHECKPOINTS,
 } from "./consts.js";
 import { io } from "./socketio.js";
 import { Player, randomPlayerColor } from "./player.js";
@@ -72,6 +79,9 @@ export class Lobby {
     this._playerSyncRequestTimers = new Map();
     this._playerSyncSessions = new Map();
     this._playerSyncSessionTimers = new Map();
+    this._silentEliminationHolds = new Map();
+    this._taskStations = new Map();
+    this._taskStationTimers = new Map();
     this._eventLog = [];
     this._lastImpostorColors = new Set(
       Array.isArray(lastImpostorColors) ? lastImpostorColors : []
@@ -120,6 +130,7 @@ export class Lobby {
       io.to(player.id).emit("cooldownUpdate", {
         cooldowns: ownCooldown ? { [player.color]: ownCooldown } : {},
         firewall,
+        hacked: this.#hackView(player.color),
       });
     }
     broadcastAdminSnapshot();
@@ -128,6 +139,182 @@ export class Lobby {
 
   participatingPlayers() {
     return Object.values(this.players).filter((player) => !player.isHostOnly);
+  }
+
+  #taskStationKey(taskNumber, taskTag) {
+    const taskName = TASKS[taskNumber]?.name;
+    if (taskName === "wiretap") {
+      if (!WIRETAP_CHECKPOINTS.includes(taskTag)) return null;
+      return `task:${taskNumber}:${taskTag}`;
+    }
+    return `task:${taskNumber}`;
+  }
+
+  #releaseTaskStation(key, { resetActivity = true } = {}) {
+    const station = this._taskStations.get(key);
+    if (station == null) return false;
+
+    const timer = this._taskStationTimers.get(key);
+    if (timer != null) clearTimeout(timer);
+    this._taskStationTimers.delete(key);
+    this._taskStations.delete(key);
+
+    const player = this.players[station.playerColor];
+    if (
+      resetActivity &&
+      player?.currentlyDoing.activity === "task" &&
+      player.currentlyDoing.number === station.taskNumber &&
+      (station.taskTag == null || player.currentlyDoing.taskTag === station.taskTag)
+    ) {
+      player.currentlyDoing = { activity: "nothing" };
+    }
+    return true;
+  }
+
+  #releaseExpiredTaskStations(now = Date.now()) {
+    let released = 0;
+    for (const [key, station] of this._taskStations) {
+      if (station.expiresAt > now) continue;
+      if (this.#releaseTaskStation(key)) released += 1;
+    }
+    return released;
+  }
+
+  #reserveTaskStation(playerColor, taskNumber, taskTag) {
+    const key = this.#taskStationKey(taskNumber, taskTag);
+    if (key == null) return [false, "Неизвестная точка задания"];
+
+    const durationMs = this.testMode.enabled
+      ? TEST_MODE_TIMERS.taskStationLeaseMs
+      : TASK_STATION_LEASE_MS;
+    const acquiredAt = Date.now();
+    const station = {
+      key,
+      taskNumber,
+      ...(TASKS[taskNumber]?.name === "wiretap" ? { taskTag } : {}),
+      playerColor,
+      acquiredAt,
+      expiresAt: acquiredAt + durationMs,
+    };
+    this._taskStations.set(key, station);
+
+    const oldTimer = this._taskStationTimers.get(key);
+    if (oldTimer != null) clearTimeout(oldTimer);
+    const timer = setTimeout(() => {
+      const current = this._taskStations.get(key);
+      if (current?.expiresAt !== station.expiresAt) return;
+      if (!this.#releaseTaskStation(key)) return;
+      this.recordEvent(
+        "task_station_timeout",
+        `Точка задания освобождена после потери связи с ${this.players[playerColor]?.name || playerColor}`
+      );
+      this.synchronize();
+    }, durationMs);
+    timer.unref?.();
+    this._taskStationTimers.set(key, timer);
+    return [true, station];
+  }
+
+  startPlayerTask(playerColor, taskNumber, taskTag) {
+    const player = this.players[playerColor];
+    if (player == null) return [false, "Игрок не найден"];
+
+    this.#releaseExpiredTaskStations();
+    const assignedTask = player.tasks.find((task) => task.number === taskNumber);
+    const key = this.#taskStationKey(taskNumber, taskTag);
+    if (assignedTask == null || key == null) {
+      return [false, "Задание недоступно"];
+    }
+
+    const occupied = this._taskStations.get(key);
+    if (occupied != null && occupied.playerColor !== playerColor) {
+      const occupantName = this.players[occupied.playerColor]?.name || occupied.playerColor;
+      return [false, `Точка задания занята игроком ${occupantName}`];
+    }
+
+    if (!player.startTask(taskNumber, taskTag)) {
+      return [false, "Задание недоступно или уже выполняется другое действие"];
+    }
+
+    // A player can hold only one physical point. Starting another task releases
+    // the previous lease without clearing the newly written activity.
+    this.releaseTaskStationForPlayer(playerColor, { resetActivity: false });
+    this.#reserveTaskStation(playerColor, taskNumber, taskTag);
+    this.#clearSilentEliminationHoldFor(playerColor);
+    return [true];
+  }
+
+  releaseTaskStationForPlayer(playerColor, { resetActivity = false } = {}) {
+    let released = false;
+    for (const [key, station] of [...this._taskStations]) {
+      if (station.playerColor !== playerColor) continue;
+      released = this.#releaseTaskStation(key, { resetActivity }) || released;
+    }
+    if (
+      resetActivity &&
+      this.players[playerColor]?.currentlyDoing.activity === "task"
+    ) {
+      this.players[playerColor].currentlyDoing = { activity: "nothing" };
+    }
+    return released;
+  }
+
+  clearPlayerActivity(playerColor) {
+    const player = this.players[playerColor];
+    if (player == null) return [false, "Игрок не найден"];
+    this.releaseTaskStationForPlayer(playerColor, { resetActivity: true });
+    player.currentlyDoing = { activity: "nothing" };
+    this.synchronize();
+    return [true];
+  }
+
+  toggleAgentTask(playerColor, taskNumber) {
+    const player = this.players[playerColor];
+    if (this.status.state !== "started") return [false, "Игра не запущена"];
+    if (player == null) return [false, "Игрок не найден"];
+    if (player.status !== "alive") return [false, "Погибшие игроки не могут менять задания"];
+    if (player.role.name !== "impostor") {
+      return [false, "Отметки имитации доступны только внедрённому агенту"];
+    }
+
+    const task = player.tasks.find(
+      (candidate) => candidate.number === taskNumber && candidate.isExtraTask !== true
+    );
+    if (task == null) return [false, "Задание не назначено"];
+
+    if (task.status === "completed") {
+      task.status = "available";
+      if (task.name === "wiretap") task.completedCheckpoints = [];
+    } else {
+      if (
+        player.currentlyDoing.activity === "task" &&
+        player.currentlyDoing.number === taskNumber
+      ) {
+        this.releaseTaskStationForPlayer(playerColor, { resetActivity: true });
+      }
+      task.status = "completed";
+    }
+
+    this.synchronize();
+    return [true, task.status];
+  }
+
+  #clearTaskStations() {
+    for (const key of [...this._taskStations.keys()]) {
+      this.#releaseTaskStation(key);
+    }
+  }
+
+  #taskStationViews(snapshotNow = Date.now()) {
+    this.#releaseExpiredTaskStations(snapshotNow);
+    return [...this._taskStations.values()].map((station) => ({
+      key: station.key,
+      taskNumber: station.taskNumber,
+      ...(station.taskTag == null ? {} : { taskTag: station.taskTag }),
+      playerColor: station.playerColor,
+      playerName: this.players[station.playerColor]?.name || station.playerColor,
+      remainingMs: Math.max(0, station.expiresAt - snapshotNow),
+    }));
   }
 
   nParticipatingPlayers() {
@@ -149,8 +336,10 @@ export class Lobby {
   startGame() {
     this.pause = { active: false, startedAt: null };
     this.#clearPlayerSyncInteractions();
+    this.#clearTaskStations();
     this.#assignTasks();
     this.#assignRolesRandomly();
+    this.#clearSilentEliminationHolds();
     this.#configureTaskScaling();
     const roleDisplaySeconds = this.testMode.enabled
       ? TEST_MODE_TIMERS.roleDisplay
@@ -171,6 +360,8 @@ export class Lobby {
       throw Error(`Meeting type invalid: ${type}`);
     if (this.players[initiatorColor]?.isHostOnly) return;
     this.#clearPlayerSyncInteractions();
+    this.#clearSilentEliminationHolds();
+    this.#clearTaskStations();
     this.status = {
       state: "meetingCalled",
       type,
@@ -314,6 +505,7 @@ export class Lobby {
     if (this.status.state !== "started") {
       return [false, "Игра не запущена"];
     }
+    if (this.pause.active) return [false, "Игра поставлена на паузу"];
 
     const killer = this.players[killerColor];
     const target = this.players[targetColor];
@@ -351,6 +543,13 @@ export class Lobby {
       return [false, `Способность восстанавливается: ${killer.role.killCooldown} сек.`];
     }
 
+    this.#clearSilentEliminationHoldFor(killerColor);
+    this.#clearSilentEliminationHoldFor(targetColor);
+    this.releaseTaskStationForPlayer(targetColor, { resetActivity: true });
+    target.currentlyDoing = { activity: "nothing" };
+    if (this.activeEffects.hacked?.affectedPlayers.includes(targetColor)) {
+      this.activeEffects.hacked = null;
+    }
     target.status = "dead";
     this.recordEvent(
       "player_killed",
@@ -372,12 +571,77 @@ export class Lobby {
     return [true];
   }
 
+  #validateSilentElimination(killerColor, targetColor) {
+    const killer = this.players[killerColor];
+    const target = this.players[targetColor];
+    if (this.status.state !== "started") return [false, "Игра не запущена"];
+    if (this.pause.active) return [false, "Игра поставлена на паузу"];
+    if (killer == null || target == null) return [false, "Игрок не найден"];
+    if (killer.isHostOnly || target.isHostOnly) {
+      return [false, "Ведущий не участвует в игровых действиях"];
+    }
+    if (killerColor === targetColor) return [false, "Нельзя устранить самого себя"];
+    if (killer.role.name !== "impostor") {
+      return [false, "Секретное действие недоступно"];
+    }
+    if (killer.status !== "alive") {
+      return [false, "Погибшие игроки не могут устранять других"];
+    }
+    if (target.status !== "alive") return [false, "Цель уже не жива"];
+    if (killer.currentlyDoing.activity !== "nothing") {
+      return [false, "Сначала завершите текущее действие"];
+    }
+    if (killer.role.killCooldown > 0) {
+      return [false, `Способность восстанавливается: ${killer.role.killCooldown} сек.`];
+    }
+    if (target.role.name !== "crew") {
+      return [false, "Нельзя устранить другого внедрённого агента"];
+    }
+    if (!["nothing", "task"].includes(target.currentlyDoing.activity)) {
+      return [false, "Цель сейчас недоступна для тихого устранения"];
+    }
+    return [true, killer, target];
+  }
+
+  beginSilentEliminationHold(killerColor, targetColor) {
+    const validation = this.#validateSilentElimination(killerColor, targetColor);
+    if (!validation[0]) return validation;
+    this._silentEliminationHolds.set(killerColor, {
+      targetColor,
+      startedAt: Date.now(),
+    });
+    return [true];
+  }
+
+  cancelSilentEliminationHold(killerColor) {
+    this._silentEliminationHolds.delete(killerColor);
+    return [true];
+  }
+
+  silentKillPlayer(targetColor, killerColor) {
+    const hold = this._silentEliminationHolds.get(killerColor);
+    this._silentEliminationHolds.delete(killerColor);
+    if (hold == null || hold.targetColor !== targetColor) {
+      return [false, "Удержание для устранения не начато"];
+    }
+    const heldForMs = Date.now() - hold.startedAt;
+    if (heldForMs < SILENT_KILL_HOLD_MS) {
+      return [false, "Кнопка устранения отпущена слишком рано"];
+    }
+    if (heldForMs > SILENT_KILL_HOLD_MAX_MS) {
+      return [false, "Удержание для устранения устарело"];
+    }
+    const validation = this.#validateSilentElimination(killerColor, targetColor);
+    if (!validation[0]) return validation;
+    return this.killPlayer(targetColor, killerColor);
+  }
+
   requestPlayerSync(scannerColor, targetColor, mode = "sync") {
     if (this.status.state !== "started") {
       return [false, "Синхронизация доступна только во время активного раунда"];
     }
     if (this.pause.active) return [false, "Игра поставлена на паузу"];
-    if (mode !== "sync" && mode !== "eliminate") {
+    if (mode !== "sync") {
       return [false, "Неизвестный режим синхронизации"];
     }
 
@@ -393,18 +657,7 @@ export class Lobby {
     if (scanner.status !== "alive" || target.status !== "alive") {
       return [false, "Синхронизация доступна только живым игрокам"];
     }
-
-    if (mode === "eliminate") {
-      if (scanner.role.name !== "impostor") {
-        return [false, "Секретное действие недоступно"];
-      }
-      if (scanner.role.killCooldown > 0) {
-        return [false, `Способность восстанавливается: ${scanner.role.killCooldown} сек.`];
-      }
-      if (target.role.name === "impostor") {
-        return [false, "Нельзя устранить другого внедрённого агента"];
-      }
-    }
+    this._silentEliminationHolds.delete(scannerColor);
 
     const sameRequest = [...this._playerSyncRequests.values()].find(
       (request) =>
@@ -433,18 +686,9 @@ export class Lobby {
       }
 
       this.#removePlayerSyncRequest(reverseRequest.id);
-      const covertAction = mode === "eliminate"
-        ? { killerColor: scannerColor, victimColor: targetColor }
-        : reverseRequest.mode === "eliminate"
-          ? {
-              killerColor: reverseRequest.fromColor,
-              victimColor: reverseRequest.toColor,
-            }
-          : null;
       return this.#startPlayerSyncSession(
         reverseRequest.fromColor,
-        reverseRequest.toColor,
-        covertAction
+        reverseRequest.toColor
       );
     }
 
@@ -472,13 +716,9 @@ export class Lobby {
       return [false, "Этот игрок сейчас занят другим действием"];
     }
 
-    const covertAction = mode === "eliminate"
-      ? { killerColor: scannerColor, victimColor: targetColor }
-      : null;
-
     // Simulated players stand in for a second phone in the host test mode.
     if (target.isSimulated) {
-      return this.#startPlayerSyncSession(scannerColor, targetColor, covertAction);
+      return this.#startPlayerSyncSession(scannerColor, targetColor);
     }
 
     const request = {
@@ -567,18 +807,6 @@ export class Lobby {
       return [false, "Синхронизация была прервана"];
     }
 
-    if (session.covertAction != null) {
-      const killer = this.players[session.covertAction.killerColor];
-      const victim = this.players[session.covertAction.victimColor];
-      if (killer != null && victim != null) {
-        killer.completeSyncTask(victim.color);
-      }
-      return this.killPlayer(
-        session.covertAction.victimColor,
-        session.covertAction.killerColor
-      );
-    }
-
     first.completeSyncTask(second.color);
     second.completeSyncTask(first.color);
     this.recordEvent(
@@ -589,7 +817,7 @@ export class Lobby {
     return [true];
   }
 
-  #startPlayerSyncSession(firstColor, secondColor, covertAction) {
+  #startPlayerSyncSession(firstColor, secondColor) {
     const first = this.players[firstColor];
     const second = this.players[secondColor];
     if (first == null || second == null) return [false, "Игрок не найден"];
@@ -604,7 +832,6 @@ export class Lobby {
       startedAt,
       endsAt: startedAt + durationMs,
       durationMs,
-      covertAction,
     };
     this._playerSyncSessions.set(session.id, session);
     first.currentlyDoing = {
@@ -673,6 +900,35 @@ export class Lobby {
     for (const sessionId of [...this._playerSyncSessions.keys()]) {
       this.#removePlayerSyncSession(sessionId);
     }
+  }
+
+  #clearPlayerSyncInteractionFor(playerColor) {
+    for (const [requestId, request] of [...this._playerSyncRequests]) {
+      if (
+        request.fromColor === playerColor ||
+        request.toColor === playerColor
+      ) {
+        this.#removePlayerSyncRequest(requestId);
+      }
+    }
+    for (const [sessionId, session] of [...this._playerSyncSessions]) {
+      if (session.colors.includes(playerColor)) {
+        this.#removePlayerSyncSession(sessionId);
+      }
+    }
+  }
+
+  #clearSilentEliminationHoldFor(playerColor) {
+    this._silentEliminationHolds.delete(playerColor);
+    for (const [killerColor, hold] of [...this._silentEliminationHolds]) {
+      if (hold.targetColor === playerColor) {
+        this._silentEliminationHolds.delete(killerColor);
+      }
+    }
+  }
+
+  #clearSilentEliminationHolds() {
+    this._silentEliminationHolds.clear();
   }
 
   #playerSyncView(playerColor) {
@@ -926,6 +1182,7 @@ export class Lobby {
 
     if (
       this.activeEffects.firewallBreach != null ||
+      this.activeEffects.hacked != null ||
       this._virusScanActiveUntil > Date.now()
     ) {
       return [false, "Другой саботаж уже активен"];
@@ -939,7 +1196,7 @@ export class Lobby {
         return this.#startVirusScan(impostorColor);
 
       case "hackPlayer":
-        return [false, "Взлом игрока пока недоступен"];
+        return this.#startPlayerHack(impostorColor, sabotage.target);
 
       default:
         return [false, `Неизвестный вид саботажа: ${String(kind)}`];
@@ -1092,6 +1349,9 @@ export class Lobby {
     );
 
     this.players[playerColor].connection = "disconnected";
+    this.#clearPlayerSyncInteractionFor(playerColor);
+    this.#clearSilentEliminationHoldFor(playerColor);
+    this.releaseTaskStationForPlayer(playerColor, { resetActivity: true });
 
     const nConnectedPlayers = this.nConnectedPlayers();
 
@@ -1295,6 +1555,57 @@ export class Lobby {
     return [true];
   }
 
+  #startPlayerHack(impostorColor, targetColor) {
+    const impostor = this.players[impostorColor];
+    const target = this.players[targetColor];
+    if (impostor == null || impostor.role.name !== "impostor") {
+      return [false, "Недопустимый внедрённый агент"];
+    }
+    if (target == null) return [false, "Цель взлома не найдена"];
+    if (target.isHostOnly) return [false, "Ведущий не участвует в игровых действиях"];
+    if (targetColor === impostorColor) return [false, "Нельзя взломать самого себя"];
+    if (target.status !== "alive" || target.role.name !== "crew") {
+      return [false, "Можно взломать только живого оперативника"];
+    }
+
+    const countDown = this.testMode.enabled
+      ? TEST_MODE_TIMERS.hack
+      : HACKED_SECS;
+    this.activeEffects.hacked = {
+      affectedPlayers: [targetColor],
+      countDown,
+    };
+    impostor.role.sabotageCooldown = this.testMode.enabled
+      ? TEST_MODE_TIMERS.sabotageCooldown
+      : HACK_COOLDOWN;
+    this.recordEvent(
+      "sabotage",
+      `${target.name} взломан игроком ${impostor.name} на ${countDown} сек.`
+    );
+    this.synchronize();
+    return [true];
+  }
+
+  isPlayerHacked(playerColor) {
+    return this.activeEffects.hacked?.affectedPlayers.includes(playerColor) === true;
+  }
+
+  #hackView(viewerColor) {
+    const hacked = this.activeEffects.hacked;
+    if (hacked == null) return null;
+    const viewer = this.players[viewerColor];
+    if (
+      !hacked.affectedPlayers.includes(viewerColor) &&
+      viewer?.role.name !== "impostor"
+    ) {
+      return null;
+    }
+    return {
+      affectedPlayers: [...hacked.affectedPlayers],
+      countDown: hacked.countDown,
+    };
+  }
+
   #endFirewallBreach() {
     this.activeEffects.firewallBreach = null;
     for (const player of Object.values(this.players)) {
@@ -1432,6 +1743,8 @@ export class Lobby {
     if (this.status.state === "gameEnded") return;
     this.#removeGameIntervals();
     this.#clearPlayerSyncInteractions();
+    this.#clearSilentEliminationHolds();
+    this.#clearTaskStations();
     this.activeEffects.firewallBreach = null;
     this.activeEffects.hacked = null;
     this.#resetVirusScanState();
@@ -1480,6 +1793,8 @@ export class Lobby {
       if (this._virusScanTimer != null) clearTimeout(this._virusScanTimer);
       this._virusScanTimer = null;
       this.#clearPlayerSyncInteractions();
+      this.#clearSilentEliminationHolds();
+      this.#clearTaskStations();
       for (const player of Object.values(this.players)) {
         player.currentlyDoing = { activity: "nothing" };
       }
@@ -1537,9 +1852,17 @@ export class Lobby {
       return [false, "Статус ведущего не относится к матчу"];
     if (!["alive", "dead", "foundDead"].includes(status))
       return [false, "Недопустимый статус игрока"];
-    this.#clearPlayerSyncInteractions();
+    this.#clearPlayerSyncInteractionFor(color);
+    this.#clearSilentEliminationHoldFor(color);
+    this.releaseTaskStationForPlayer(color, { resetActivity: true });
     player.status = status;
     player.currentlyDoing = { activity: "nothing" };
+    if (
+      status !== "alive" &&
+      this.activeEffects.hacked?.affectedPlayers.includes(color)
+    ) {
+      this.activeEffects.hacked = null;
+    }
     const statusLabel =
       status === "alive" ? "жив" : status === "dead" ? "убит" : "погиб";
     this.recordEvent(
@@ -1553,6 +1876,14 @@ export class Lobby {
   adminSetPlayerRole(color, roleName) {
     if (!this.testMode.enabled)
       return [false, "Роли можно изменять только в тестовом режиме"];
+    return this.#setPlayerRoleForTesting(color, roleName);
+  }
+
+  devSetPlayerRole(color, roleName) {
+    return this.#setPlayerRoleForTesting(color, roleName);
+  }
+
+  #setPlayerRoleForTesting(color, roleName) {
     const player = this.players[color];
     if (player == null) return [false, "Игрок не найден"];
     if (player.isHostOnly)
@@ -1560,9 +1891,22 @@ export class Lobby {
     if (roleName !== "crew" && roleName !== "impostor")
       return [false, "Недопустимая роль игрока"];
 
+    this.#clearPlayerSyncInteractionFor(color);
+    this.#clearSilentEliminationHoldFor(color);
+    this.releaseTaskStationForPlayer(color, { resetActivity: true });
+    if (
+      roleName === "impostor" &&
+      this.activeEffects.hacked?.affectedPlayers.includes(color)
+    ) {
+      this.activeEffects.hacked = null;
+    }
     player.role =
       roleName === "impostor"
-        ? { name: "impostor", killCooldown: 0, sabotageCooldown: 0 }
+        ? {
+            name: "impostor",
+            killCooldown: 0,
+            sabotageCooldown: 0,
+          }
         : { name: "crew" };
     this.recordEvent(
       "test_action",
@@ -1716,6 +2060,8 @@ export class Lobby {
   adminResetGame() {
     this.#removeGameIntervals();
     this.#clearPlayerSyncInteractions();
+    this.#clearSilentEliminationHolds();
+    this.#clearTaskStations();
     this.activeEffects = { ...ACTIVE_EFFECTS_BASE };
     this.#resetVirusScanState();
     this.pause = { active: false, startedAt: null };
@@ -1785,15 +2131,28 @@ export class Lobby {
   adminLaunchSabotage(kind) {
     if (!this.testMode.enabled)
       return [false, "Саботаж можно имитировать только в тестовом режиме"];
-    if (kind !== "virusScan" && kind !== "firewallBreach")
+    if (
+      kind !== "virusScan" &&
+      kind !== "firewallBreach" &&
+      kind !== "hackPlayer"
+    )
       return [false, "Недопустимый вид саботажа"];
     if (this.pause.active) return [false, "Сначала продолжите игру"];
     const impostor = this.#getImpostors().find(
       (player) => player.status === "alive"
     );
     if (impostor == null) return [false, "В лобби нет живого внедрённого агента"];
+    const target = Object.values(this.players).find(
+      (player) => player.status === "alive" && player.role.name === "crew"
+    );
+    if (kind === "hackPlayer" && target == null) {
+      return [false, "Нет живого оперативника для взлома"];
+    }
     impostor.role.sabotageCooldown = 0;
-    return this.launchSabotage(impostor.color, { kind });
+    return this.launchSabotage(impostor.color, {
+      kind,
+      ...(kind === "hackPlayer" ? { target: target.color } : {}),
+    });
   }
 
   #addTestPlayers(requestedCount) {
@@ -1848,8 +2207,10 @@ export class Lobby {
   }
 
   resumeAfterRestore() {
+    this.#clearSilentEliminationHolds();
     for (const player of Object.values(this.players)) {
       if (
+        player.currentlyDoing?.activity === "task" ||
         player.currentlyDoing?.activity === "awaitingSync" ||
         player.currentlyDoing?.activity === "playerSync"
       ) {
@@ -2035,7 +2396,9 @@ export class Lobby {
       // e.g. because of a meeting
       const gamePaused = this.status.state !== "started" || this.pause.active;
 
-      for (const player of impostors) {
+      // Roles can be changed while a test match is running. Always use the
+      // current list so a newly assigned agent receives live cooldown ticks.
+      for (const player of this.#getImpostors()) {
         if (player.role.killCooldown > 0 && !gamePaused) {
           player.role.killCooldown -= 1;
           sync = true;
@@ -2063,6 +2426,18 @@ export class Lobby {
           sync = true;
         }
       }
+      if (
+        this.activeEffects.hacked != null &&
+        !gamePaused &&
+        this.activeEffects.hacked.countDown > 0
+      ) {
+        this.activeEffects.hacked.countDown -= 1;
+        if (this.activeEffects.hacked.countDown === 0) {
+          this.activeEffects.hacked = null;
+          this.recordEvent("sabotage_ended", "Взлом игрока завершён");
+        }
+        sync = true;
+      }
       if (sync) this.synchronizeCooldowns();
     }, 1000);
   }
@@ -2077,6 +2452,7 @@ export class Lobby {
 
   #removeIntervals() {
     this.#removeGameIntervals();
+    this.#clearTaskStations();
     if (this._virusScanTimer != null) clearTimeout(this._virusScanTimer);
     this._virusScanTimer = null;
     if (this._lobbyDeleteTimeout != null)
@@ -2126,6 +2502,11 @@ export class Lobby {
     );
     lobbyState.playerSync = this.#playerSyncView(viewerColor);
     lobbyState.virusScan = this.#virusScanView(viewerColor);
+    lobbyState.taskStations = this.#taskStationViews(snapshotNow);
+    lobbyState.activeEffects = {
+      ...lobbyState.activeEffects,
+      hacked: this.#hackView(viewerColor),
+    };
     return lobbyState;
   }
 
@@ -2135,6 +2516,7 @@ export class Lobby {
       : Date.now();
     return {
       ...this.serialize(),
+      taskStations: this.#taskStationViews(),
       eventLog: [...this._eventLog],
       preflightChecks: structuredClone(this._preflightChecks),
       adminState: {
@@ -2183,6 +2565,7 @@ export class Lobby {
   destroy() {
     this._destroyed = true;
     this.#clearPlayerSyncInteractions();
+    this.#clearSilentEliminationHolds();
     this.#removeIntervals();
   }
 }
@@ -2353,6 +2736,13 @@ function restorePersistedLobbies() {
         stored.singleTaskProgressionAmount ?? lobby.singleTaskProgressionAmount;
       lobby.activities = stored.activities ?? null;
       lobby.activeEffects = stored.activeEffects ?? { ...ACTIVE_EFFECTS_BASE };
+      if (
+        lobby.activeEffects.hacked != null &&
+        (!Number.isFinite(lobby.activeEffects.hacked.countDown) ||
+          lobby.activeEffects.hacked.countDown <= 0)
+      ) {
+        lobby.activeEffects.hacked = null;
+      }
       lobby.testMode = stored.testMode ?? { enabled: false };
       lobby._eventLog = Array.isArray(stored.eventLog)
         ? stored.eventLog.slice(-100)

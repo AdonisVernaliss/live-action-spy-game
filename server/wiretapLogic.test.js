@@ -12,9 +12,9 @@ import {
   wiretapSignalQuality,
 } from "../src/lib/minigames/wiretapLogic.js";
 
-test("wiretap uses three six-second interception rounds", () => {
+test("wiretap uses three seven-second interception rounds", () => {
   assert.equal(WIRETAP_ROUNDS, 3);
-  assert.equal(WIRETAP_HOLD_SECONDS, 6);
+  assert.equal(WIRETAP_HOLD_SECONDS, 7);
 });
 
 test("wiretap station is derived only from known physical tags", () => {
@@ -31,20 +31,20 @@ test("signal quality and lock require both radar axes to be aligned", () => {
     wiretapSignalQuality([55, 50], [50, 50]) >
       wiretapSignalQuality([70, 50], [50, 50])
   );
-  assert.equal(isWiretapLocked([54, 53], [50, 50], 1), true);
+  assert.equal(isWiretapLocked([53, 52], [50, 50], 1), true);
   assert.equal(isWiretapLocked([54, 54], [50, 50], 2), false);
   assert.equal(isWiretapLocked([50, 50], [50, 50], 3, true), false);
 });
 
 test("station profiles add drift and jamming without moving outside the radar", () => {
   assert.equal(shouldDriftWiretapTarget(1, 10), false);
-  assert.equal(shouldDriftWiretapTarget(2, 8), true);
-  assert.equal(shouldDriftWiretapTarget(3, 6), true);
+  assert.equal(shouldDriftWiretapTarget(2, 7), true);
+  assert.equal(shouldDriftWiretapTarget(3, 5), true);
   assert.deepEqual(driftWiretapTarget([20, 80], 1, () => 1), [20, 80]);
-  assert.deepEqual(driftWiretapTarget([92, 8], 3, () => 1), [92, 9.75]);
-  assert.equal(isWiretapJammed(2, 55), false);
-  assert.equal(isWiretapJammed(3, 55), true);
-  assert.equal(isWiretapJammed(3, 66), false);
+  assert.deepEqual(driftWiretapTarget([92, 8], 3, () => 1), [92, 10]);
+  assert.equal(isWiretapJammed(2, 48), false);
+  assert.equal(isWiretapJammed(3, 48), true);
+  assert.equal(isWiretapJammed(3, 60), false);
   assert.equal(isWiretapTargetVisible(1, 0), true);
-  assert.equal(isWiretapTargetVisible(1, 8), false);
+  assert.equal(isWiretapTargetVisible(1, 7), false);
 });

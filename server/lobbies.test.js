@@ -5,8 +5,12 @@ import { Player, playerNameValid } from "./player.js";
 import {
   BASE_LOCATIONS,
   FIREWALL_REPAIR_HOLD_MS,
+  HACKED_SECS,
+  HACK_COOLDOWN,
+  KILL_COOLDOWN_SECS,
   NFC_ACTIVITIES,
   NFC_ACTIVITY_TAGS,
+  SILENT_KILL_HOLD_MS,
   TASKS,
   TEST_MODE_TIMERS,
   VIRUS_SCAN_FAILED_PUNISH_SECS,
@@ -43,13 +47,313 @@ test("a meeting interrupts active player activities and clears hacks", () => {
   green.currentlyDoing = { activity: "task", number: 1 };
 
   const lobby = makeLobby([green, red], { state: "started", countDown: 0 });
-  lobby.activeEffects.hacked = { affectedPlayers: ["green"] };
+  lobby.activeEffects.hacked = { affectedPlayers: ["green"], countDown: 10 };
 
   lobby.startMeetingCall("emergency", "green");
 
   assert.deepEqual(green.currentlyDoing, { activity: "nothing" });
   assert.equal(lobby.activeEffects.hacked, null);
   assert.equal(lobby.status.state, "meetingCalled");
+  lobby.destroy();
+});
+
+test("a physical task station admits one player and releases immediately", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const task = {
+    name: "simonsays",
+    number: 0,
+    description: "Test",
+    status: "available",
+  };
+  green.tasks = [{ ...task }];
+  blue.tasks = [{ ...task }];
+  const lobby = makeLobby([green, blue], { state: "started", countDown: 0 });
+
+  assert.deepEqual(lobby.startPlayerTask("green", 0, "simonsays"), [true]);
+  assert.equal(lobby.serializeForPlayer("blue").taskStations.length, 1);
+  assert.match(lobby.startPlayerTask("blue", 0, "simonsays")[1], /занята/);
+
+  assert.deepEqual(lobby.clearPlayerActivity("green"), [true]);
+  assert.equal(lobby.serializeForPlayer("blue").taskStations.length, 0);
+  assert.deepEqual(lobby.startPlayerTask("blue", 0, "simonsays"), [true]);
+  lobby.disconnectPlayer("blue");
+  assert.equal(lobby.serializeForPlayer("green").taskStations.length, 0);
+  assert.deepEqual(blue.currentlyDoing, { activity: "nothing" });
+  lobby.destroy();
+});
+
+test("developer role switching preserves the live Player instance", () => {
+  const green = makePlayer("green", { name: "crew" });
+  green.tasks = [{
+    name: "simonsays",
+    number: 0,
+    description: "Test",
+    status: "available",
+  }];
+  const lobby = makeLobby([green], { state: "started", countDown: 0 });
+
+  assert.deepEqual(lobby.devSetPlayerRole("green", "impostor"), [true]);
+  assert.equal(lobby.players.green, green);
+  assert.equal(typeof lobby.players.green.startTask, "function");
+  assert.deepEqual(lobby.startPlayerTask("green", 0, "simonsays"), [true]);
+  assert.deepEqual(lobby.clearPlayerActivity("green"), [true]);
+  assert.deepEqual(lobby.devSetPlayerRole("green", "crew"), [true]);
+  assert.equal(lobby.players.green, green);
+  lobby.destroy();
+});
+
+test("cooldowns keep ticking for an agent assigned after the match starts", async () => {
+  const host = makePlayer("green", { name: "undecided" });
+  const lobby = makeLobby([host], {
+    state: "settingRooms",
+    readyPlayers: {},
+  });
+
+  try {
+    assert.deepEqual(lobby.adminPrepareTestLobby(3), [true]);
+    assert.deepEqual(lobby.adminStartTestGame(), [true]);
+    assert.deepEqual(lobby.adminAdvancePhase(), [true]);
+
+    const originalAgent = Object.values(lobby.players).find(
+      (player) => player.role.name === "impostor"
+    );
+    const newAgent = Object.values(lobby.players).find(
+      (player) => !player.isHostOnly && player.role.name === "crew"
+    );
+    assert.ok(originalAgent);
+    assert.ok(newAgent);
+
+    assert.deepEqual(lobby.devSetPlayerRole(originalAgent.color, "crew"), [true]);
+    assert.deepEqual(lobby.devSetPlayerRole(newAgent.color, "impostor"), [true]);
+    assert.deepEqual(lobby.adminResetCooldowns(), [true]);
+    assert.deepEqual(
+      lobby.launchSabotage(newAgent.color, { kind: "virusScan" }),
+      [true]
+    );
+    assert.equal(
+      newAgent.role.sabotageCooldown,
+      TEST_MODE_TIMERS.sabotageCooldown
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+    assert.ok(
+      newAgent.role.sabotageCooldown < TEST_MODE_TIMERS.sabotageCooldown,
+      "the newly assigned agent must be included in the live cooldown timer"
+    );
+  } finally {
+    lobby.destroy();
+  }
+});
+
+test("agent task marks are reversible and never affect real progress", () => {
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  red.tasks = [{
+    name: "wiretap",
+    number: 1,
+    description: "Test",
+    status: "available",
+    completedCheckpoints: [],
+  }];
+  const lobby = makeLobby([red], { state: "started", countDown: 0 });
+  const progressBefore = lobby.taskProgression.real;
+
+  assert.deepEqual(lobby.toggleAgentTask("red", 1), [true, "completed"]);
+  assert.equal(red.tasks[0].status, "completed");
+  assert.equal(lobby.taskProgression.real, progressBefore);
+
+  assert.deepEqual(lobby.toggleAgentTask("red", 1), [true, "available"]);
+  assert.equal(red.tasks[0].status, "available");
+  assert.deepEqual(red.tasks[0].completedCheckpoints, []);
+  assert.equal(lobby.taskProgression.real, progressBefore);
+  assert.deepEqual(lobby.startPlayerTask("red", 1, "wiretap1"), [true]);
+  lobby.destroy();
+});
+
+test("an agent can scan and simulate every standard minigame", () => {
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  red.tasks = TASKS.map((task, number) => ({
+    name: task.name,
+    number,
+    description: `Task ${number}`,
+    status: "available",
+    ...(task.name === "wiretap" ? { completedCheckpoints: [] } : {}),
+  }));
+  const lobby = makeLobby([red], { state: "started", countDown: 0 });
+  const progressBefore = lobby.taskProgression.real;
+
+  for (const task of red.tasks) {
+    const taskTag = task.name === "wiretap" ? "wiretap1" : undefined;
+    assert.deepEqual(
+      lobby.startPlayerTask(red.color, task.number, taskTag),
+      [true],
+      `start fake ${task.name}`
+    );
+    assert.equal(red.finishTask(task.number, taskTag), true, task.name);
+    lobby.releaseTaskStationForPlayer(red.color);
+  }
+
+  assert.equal(red.tasks.every((task) => task.status === "completed"), true);
+  assert.equal(lobby.taskProgression.real, progressBefore);
+  lobby.destroy();
+});
+
+test("wiretap checkpoints are independent physical task stations", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  for (const player of [green, blue]) {
+    player.tasks = [{
+      name: "wiretap",
+      number: 1,
+      description: "Test",
+      status: "available",
+      completedCheckpoints: [],
+    }];
+  }
+  const lobby = makeLobby([green, blue], { state: "started", countDown: 0 });
+
+  assert.deepEqual(lobby.startPlayerTask("green", 1, "wiretap1"), [true]);
+  assert.deepEqual(lobby.startPlayerTask("blue", 1, "wiretap2"), [true]);
+  assert.equal(lobby.serializeForPlayer("green").taskStations.length, 2);
+  lobby.destroy();
+});
+
+test("all ten assigned tasks can start at a station and reach completion", () => {
+  const green = makePlayer("green", { name: "crew" });
+  green.tasks = TASKS.map((task, number) => ({
+    name: task.name,
+    number,
+    description: `Task ${number}`,
+    status: "available",
+    ...(task.name === "wiretap" ? { completedCheckpoints: [] } : {}),
+  }));
+  const lobby = makeLobby([green], { state: "started", countDown: 0 });
+
+  for (const task of green.tasks) {
+    const tags = task.name === "wiretap"
+      ? ["wiretap1", "wiretap2", "wiretap3"]
+      : [undefined];
+    for (const taskTag of tags) {
+      assert.equal(
+        lobby.startPlayerTask(green.color, task.number, taskTag)[0],
+        true,
+        `start ${task.name} ${taskTag || ""}`
+      );
+      assert.equal(
+        green.finishTask(task.number, taskTag),
+        true,
+        `finish ${task.name} ${taskTag || ""}`
+      );
+      lobby.releaseTaskStationForPlayer(green.color);
+    }
+    assert.equal(task.status, "completed", task.name);
+  }
+
+  assert.equal(green.tasks.filter((task) => task.status === "completed").length, 10);
+  lobby.destroy();
+});
+
+test("a held neutral interaction eliminates without charges and releases a task station", async () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const yellow = makePlayer("yellow", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  green.tasks = [{
+    name: "simonsays",
+    number: 0,
+    description: "Test",
+    status: "available",
+  }];
+  const lobby = makeLobby([green, blue, yellow, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.equal(lobby.silentKillPlayer("blue", "red")[0], false);
+  assert.deepEqual(lobby.startPlayerTask("green", 0, "simonsays"), [true]);
+  assert.deepEqual(lobby.beginSilentEliminationHold("red", "green"), [true]);
+  assert.equal(lobby.silentKillPlayer("green", "red")[0], false);
+  assert.deepEqual(lobby.beginSilentEliminationHold("red", "green"), [true]);
+  await new Promise((resolve) => setTimeout(resolve, SILENT_KILL_HOLD_MS + 30));
+  assert.deepEqual(lobby.silentKillPlayer("green", "red"), [true]);
+  assert.equal(green.status, "dead");
+  assert.deepEqual(green.currentlyDoing, { activity: "nothing" });
+  assert.equal(lobby.serializeForPlayer("blue").taskStations.length, 0);
+  assert.equal(red.role.killCooldown, KILL_COOLDOWN_SECS);
+  assert.equal("silentEliminationsLeft" in red.role, false);
+  assert.equal("silentEliminationArmedUntil" in red.role, false);
+  red.role.killCooldown = 0;
+  assert.deepEqual(lobby.beginSilentEliminationHold("red", "blue"), [true]);
+  assert.deepEqual(lobby.cancelSilentEliminationHold("red"), [true]);
+  assert.equal(lobby.silentKillPlayer("blue", "red")[0], false);
+  lobby.destroy();
+});
+
+test("an agent cannot begin a hidden elimination against another agent", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const maroon = makePlayer("maroon", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, red, maroon], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.equal(lobby.beginSilentEliminationHold("red", "maroon")[0], false);
+  assert.equal(lobby.silentKillPlayer("maroon", "red")[0], false);
+  assert.equal(maroon.status, "alive");
+  lobby.destroy();
+});
+
+test("player hack is targeted, private, timed, and cannot overlap sabotage", () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const yellow = makePlayer("yellow", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, yellow, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.deepEqual(
+    lobby.launchSabotage("red", { kind: "hackPlayer", target: "green" }),
+    [true]
+  );
+  assert.equal(lobby.activeEffects.hacked.countDown, HACKED_SECS);
+  assert.equal(red.role.sabotageCooldown, HACK_COOLDOWN);
+  assert.equal(lobby.serializeForPlayer("green").activeEffects.hacked.countDown, HACKED_SECS);
+  assert.equal(lobby.serializeForPlayer("blue").activeEffects.hacked, null);
+  assert.equal(lobby.serializeForPlayer("red").activeEffects.hacked.countDown, HACKED_SECS);
+
+  red.role.sabotageCooldown = 0;
+  assert.equal(lobby.launchSabotage("red", { kind: "firewallBreach" })[0], false);
+  assert.deepEqual(lobby.adminClearSabotage(), [true]);
+  assert.equal(lobby.launchSabotage("red", { kind: "hackPlayer", target: "red" })[0], false);
   lobby.destroy();
 });
 
@@ -120,7 +424,7 @@ test("mutual player scans start a private timed synchronization for both players
   lobby.destroy();
 });
 
-test("a covert synchronization looks normal to the target and eliminates only at completion", () => {
+test("agent synchronization is safe and exposes no elimination controls", () => {
   const green = makePlayer("green", { name: "crew" });
   const blue = makePlayer("blue", { name: "crew" });
   const yellow = makePlayer("yellow", { name: "crew" });
@@ -134,22 +438,26 @@ test("a covert synchronization looks normal to the target and eliminates only at
     countDown: 0,
   });
 
-  assert.deepEqual(
-    lobby.requestPlayerSync("red", "green", "eliminate"),
-    [true]
-  );
+  assert.equal(lobby.requestPlayerSync("red", "green", "eliminate")[0], false);
+  assert.deepEqual(lobby.requestPlayerSync("red", "green", "sync"), [true]);
   assert.equal(green.status, "alive");
   assert.deepEqual(lobby.requestPlayerSync("green", "red", "sync"), [true]);
 
   const targetView = lobby.serializeForPlayer("green").playerSync;
+  const agentView = lobby.serializeForPlayer("red").playerSync;
   assert.equal(targetView.state, "active");
-  assert.equal(JSON.stringify(targetView).includes("eliminate"), false);
+  assert.equal("canEliminate" in targetView, false);
+  assert.equal("eliminationArmed" in targetView, false);
+  assert.equal("canEliminate" in agentView, false);
+  assert.equal("eliminationArmed" in agentView, false);
   assert.equal(green.status, "alive");
 
   assert.deepEqual(lobby.finishPlayerSync(targetView.sessionId), [true]);
-  assert.equal(green.status, "dead");
+  assert.equal(green.status, "alive");
+  assert.equal(red.status, "alive");
   assert.equal(red.syncTask.completed, true);
-  assert.ok(red.role.killCooldown > 0);
+  assert.equal(green.syncTask.completed, true);
+  assert.equal(red.role.killCooldown, 0);
   lobby.destroy();
 });
 
@@ -166,13 +474,35 @@ test("a meeting cancels synchronization before its delayed result", () => {
     countDown: 0,
   });
 
-  lobby.requestPlayerSync("red", "green", "eliminate");
+  lobby.requestPlayerSync("red", "green", "sync");
   lobby.requestPlayerSync("green", "red", "sync");
   const sessionId = lobby.serializeForPlayer("green").playerSync.sessionId;
 
   lobby.startMeetingCall("emergency", "blue");
   assert.equal(lobby.status.state, "meetingCalled");
   assert.equal(lobby.finishPlayerSync(sessionId)[0], false);
+  assert.equal(green.status, "alive");
+  lobby.destroy();
+});
+
+test("a meeting cancels a pending elimination hold", async () => {
+  const green = makePlayer("green", { name: "crew" });
+  const blue = makePlayer("blue", { name: "crew" });
+  const red = makePlayer("red", {
+    name: "impostor",
+    killCooldown: 0,
+    sabotageCooldown: 0,
+  });
+  const lobby = makeLobby([green, blue, red], {
+    state: "started",
+    countDown: 0,
+  });
+
+  assert.deepEqual(lobby.beginSilentEliminationHold("red", "green"), [true]);
+  lobby.startMeetingCall("emergency", "blue");
+  assert.equal(lobby.status.state, "meetingCalled");
+  await new Promise((resolve) => setTimeout(resolve, SILENT_KILL_HOLD_MS + 30));
+  assert.equal(lobby.silentKillPlayer("green", "red")[0], false);
   assert.equal(green.status, "alive");
   lobby.destroy();
 });
@@ -343,6 +673,24 @@ test("preflight checks accept known QR and NFC tags only", () => {
   assert.equal(checks["player:green"].nfc.playerName, host.name);
   assert.deepEqual(lobby.clearPreflightChecks(), [true]);
   assert.deepEqual(lobby.serializeAdmin().preflightChecks, {});
+  lobby.destroy();
+});
+
+test("every venue point can be verified through both QR and NFC", () => {
+  const host = makePlayer("green", { name: "undecided" });
+  const lobby = makeLobby([host], { state: "inLobby", readyPlayers: {} });
+
+  for (const tag of Object.values(NFC_ACTIVITY_TAGS)) {
+    assert.equal(lobby.recordPreflightCheck(tag, "qr", host)[0], true, tag);
+    assert.equal(lobby.recordPreflightCheck(tag, "nfc", host)[0], true, tag);
+  }
+
+  const checks = lobby.serializeAdmin().preflightChecks;
+  assert.equal(Object.keys(checks).length, NFC_ACTIVITIES.length);
+  for (const tag of Object.values(NFC_ACTIVITY_TAGS)) {
+    assert.equal(checks[tag].qr.playerColor, host.color, `${tag} QR`);
+    assert.equal(checks[tag].nfc.playerColor, host.color, `${tag} NFC`);
+  }
   lobby.destroy();
 });
 
@@ -602,6 +950,10 @@ test("the host can prepare and start an isolated fast test lobby", () => {
   );
   assert.deepEqual(lobby.adminClearSabotage(), [true]);
   assert.equal(lobby.activeEffects.firewallBreach, null);
+  assert.deepEqual(lobby.adminResetCooldowns(), [true]);
+  assert.deepEqual(lobby.adminLaunchSabotage("hackPlayer"), [true]);
+  assert.equal(lobby.activeEffects.hacked.countDown, TEST_MODE_TIMERS.hack);
+  assert.deepEqual(lobby.adminClearSabotage(), [true]);
   lobby.destroy();
 });
 

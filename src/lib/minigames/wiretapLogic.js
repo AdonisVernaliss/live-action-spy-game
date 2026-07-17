@@ -1,5 +1,5 @@
 export const WIRETAP_ROUNDS = 3;
-export const WIRETAP_HOLD_SECONDS = 6;
+export const WIRETAP_HOLD_SECONDS = 7;
 
 /** @typedef {1 | 2 | 3} WiretapStation */
 /** @typedef {[number, number]} WiretapCoordinates */
@@ -18,34 +18,34 @@ export const WIRETAP_HOLD_SECONDS = 6;
 /** @type {Readonly<Record<WiretapStation, Readonly<WiretapProfile>>>} */
 export const WIRETAP_PROFILES = Object.freeze({
   1: Object.freeze({
-    tolerance: 5,
+    tolerance: 4,
     driftEveryTicks: 0,
     driftStep: 0,
     jamPeriodTicks: 0,
     jamDurationTicks: 0,
-    revealPeriodTicks: 24,
-    revealDurationTicks: 7,
-    minimumQuality: 92,
+    revealPeriodTicks: 26,
+    revealDurationTicks: 6,
+    minimumQuality: 94,
   }),
   2: Object.freeze({
-    tolerance: 4,
-    driftEveryTicks: 8,
-    driftStep: 1.25,
+    tolerance: 3.5,
+    driftEveryTicks: 7,
+    driftStep: 1.5,
     jamPeriodTicks: 0,
     jamDurationTicks: 0,
-    revealPeriodTicks: 27,
-    revealDurationTicks: 6,
-    minimumQuality: 93,
+    revealPeriodTicks: 28,
+    revealDurationTicks: 5,
+    minimumQuality: 95,
   }),
   3: Object.freeze({
-    tolerance: 3.5,
-    driftEveryTicks: 6,
-    driftStep: 1.75,
-    jamPeriodTicks: 55,
-    jamDurationTicks: 10,
+    tolerance: 3,
+    driftEveryTicks: 5,
+    driftStep: 2,
+    jamPeriodTicks: 48,
+    jamDurationTicks: 11,
     revealPeriodTicks: 30,
-    revealDurationTicks: 5,
-    minimumQuality: 94,
+    revealDurationTicks: 4,
+    minimumQuality: 96,
   }),
 });
 

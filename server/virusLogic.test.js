@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pickVirusDecoyCells } from "../src/lib/minigames/virusLogic.js";
+import {
+  getVirusSpawnDelay,
+  getVirusWave,
+  pickVirusDecoyCells,
+  pickVirusKind,
+} from "../src/lib/minigames/virusLogic.js";
+
+test("virus cleanup starts slowly and ramps through four visible waves", () => {
+  assert.deepEqual(
+    [0, 4, 9, 15].map((score) => getVirusWave(score).number),
+    [1, 2, 3, 4]
+  );
+  assert.equal(getVirusWave(0).maxActive, 1);
+  assert.equal(getVirusWave(15).maxActive, 4);
+  assert.equal(getVirusSpawnDelay(0, () => 0), 1200);
+  assert.equal(getVirusSpawnDelay(15, () => 0), 560);
+});
+
+test("advanced virus types are introduced only after the training wave", () => {
+  assert.equal(pickVirusKind(0, () => 0.99), "normal");
+  assert.equal(pickVirusKind(4, () => 0.99), "armored");
+  assert.equal(pickVirusKind(4, () => 0.1), "fast");
+  assert.equal(pickVirusKind(15, () => 0.1), "stealth");
+});
 
 test("glowing file decoys are unique and never replace active viruses", () => {
   const occupied = new Set([1, 4, 8]);

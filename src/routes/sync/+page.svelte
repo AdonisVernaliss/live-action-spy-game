@@ -67,6 +67,7 @@
     cancelling = false;
     if (result.success) gotoReplace("/game");
   }
+
 </script>
 
 <svelte:head>
@@ -308,6 +309,7 @@
     font-size: 12px;
     font-weight: 900;
   }
+
 
   .waiting-signal {
     height: 58px;

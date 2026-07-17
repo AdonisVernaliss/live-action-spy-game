@@ -2,12 +2,13 @@
   import { page } from "$app/stores";
   import { gotoReplace } from "$lib/util";
   import { lobbyStore, playerColorStore, playerStore } from "$lib/stores";
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import MainButton from "$lib/MainButton.svelte";
   import { emitGameAction, getSocketIO } from "$lib/websocket";
   import type { Socket } from "socket.io-client";
   import type { Color } from "$lib/types";
   import { language, localizeServerMessage } from "$lib/i18n";
+  import { SILENT_KILL_HOLD_MS } from "../../../server/consts";
 
   type ScanKind = "meeting" | "task" | "player" | "firewall" | "unknown";
   type ScanSource = "qr" | "nfc" | null;
@@ -34,12 +35,20 @@
         taskTag: string;
       }
     | {
+        kind: "taskBusy";
+        title: string;
+        description: string;
+        primaryLabel: string;
+        taskNumber: number;
+        taskTag: string;
+      }
+    | {
         kind: "playerSync";
         title: string;
         description: string;
         primaryLabel: string;
         targetColor: Color;
-        canEliminate: boolean;
+        silentTargetColor?: Color;
       }
     | {
         kind: "reportBody";
@@ -53,6 +62,7 @@
         title: string;
         description: string;
         primaryLabel: string;
+        silentTargetColor?: Color;
       }
     | {
         kind: "firewallStart";
@@ -84,6 +94,11 @@
 
   let pendingAction: PendingAction | null = null;
   let actionInProgress = false;
+  let interactionHolding = false;
+  let interactionHoldCompleted = false;
+  let interactionHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let interactionHoldAttempt = 0;
+  let interactionHoldBegin: ReturnType<typeof emitGameAction> | null = null;
   let renderedLanguage = $language;
 
   let bi = (ru: string, _en: string) => ru;
@@ -93,6 +108,17 @@
     renderedLanguage = $language;
     if (sessionReady && !loading && !actionInProgress && !preflightRecorded)
       prepareScanAction();
+  }
+
+  $: if (pendingAction?.kind === "taskBusy" && $lobbyStore != null) {
+    const waiting = pendingAction;
+    const stationStillBusy = $lobbyStore.taskStations?.some(
+      (station) =>
+        station.playerColor !== $playerStore?.color &&
+        station.taskNumber === waiting.taskNumber &&
+        (waiting.taskTag === "" || station.taskTag === waiting.taskTag)
+    );
+    if (!stationStillBusy) prepareScanAction();
   }
 
     onMount(async () => {
@@ -131,6 +157,15 @@
     if (await recordPreflightCheck()) return;
     prepareScanAction();
     });
+
+  onDestroy(() => {
+    interactionHolding = false;
+    interactionHoldAttempt += 1;
+    if (interactionHoldTimer != null) clearTimeout(interactionHoldTimer);
+    if (typeof window !== "undefined" && interactionHoldBegin != null) {
+      emitGameAction({ action: "cancelSilentEliminationHold" });
+    }
+  });
 
   function recordPreflightCheck(): Promise<boolean> {
     if (scanSource == null || $lobbyStore == null || $playerStore == null) {
@@ -431,6 +466,29 @@
       return;
     }
 
+    const occupiedStation = $lobbyStore.taskStations?.find(
+      (station) =>
+        station.taskNumber === taskNumber &&
+        (task.name !== "wiretap" || station.taskTag === value)
+    );
+    if (
+      occupiedStation != null &&
+      occupiedStation.playerColor !== $playerStore.color
+    ) {
+      pendingAction = {
+        kind: "taskBusy",
+        title: bi("Точка занята", "Station occupied"),
+        description: bi(
+          `${occupiedStation.playerName} уже выполняет это задание. Дождитесь освобождения точки и обновите статус.`,
+          `${occupiedStation.playerName} is already using this task station. Wait until it is released, then refresh the status.`
+        ),
+        primaryLabel: bi("Обновить статус", "Refresh status"),
+        taskNumber,
+        taskTag: task.name === "wiretap" ? value : "",
+      };
+      return;
+    }
+
     pendingAction = {
       kind: "task",
       title: bi("Задание найдено", "Task found"),
@@ -511,6 +569,41 @@
       return;
     }
 
+    const silentTargetColor =
+      $playerStore.role.name === "impostor" &&
+      $playerStore.role.killCooldown <= 0 &&
+      targetPlayer.role.name !== "impostor" &&
+      ["nothing", "task"].includes(targetPlayer.currentlyDoing.activity)
+        ? color
+        : undefined;
+
+    if (targetPlayer.currentlyDoing.activity === "task") {
+      pendingAction = {
+        kind: "playerInteraction",
+        title: bi("Игрок занят", "Player busy"),
+        description: bi(
+          `${targetPlayer.name} сейчас выполняет задание. Для обычной синхронизации дождитесь его завершения.`,
+          `${targetPlayer.name} is currently performing a task. Wait for it to finish before normal synchronization.`
+        ),
+        primaryLabel: bi("Вернуться в игру", "Return to game"),
+        ...(silentTargetColor ? { silentTargetColor } : {}),
+      };
+      return;
+    }
+
+    if (targetPlayer.currentlyDoing.activity !== "nothing") {
+      pendingAction = {
+        kind: "playerInteraction",
+        title: bi("Игрок занят", "Player busy"),
+        description: bi(
+          `${targetPlayer.name} уже выполняет другое действие. Повторите сканирование позже.`,
+          `${targetPlayer.name} is already performing another action. Scan again later.`
+        ),
+        primaryLabel: bi("Вернуться в игру", "Return to game"),
+      };
+      return;
+    }
+
     const isReverseConfirmation =
       $lobbyStore.playerSync?.state === "incoming" &&
       $lobbyStore.playerSync.partnerColor === color;
@@ -529,10 +622,7 @@
         ? bi("Подтвердить синхронизацию", "Confirm synchronization")
         : bi("Отправить запрос", "Send request"),
       targetColor: color,
-      canEliminate:
-        $playerStore.role.name === "impostor" &&
-        $playerStore.role.killCooldown <= 0 &&
-        targetPlayer.role.name !== "impostor",
+      ...(silentTargetColor ? { silentTargetColor } : {}),
     };
   }
 
@@ -609,7 +699,7 @@
     };
   }
 
-  async function confirmAction(syncMode: "sync" | "eliminate" = "sync") {
+  async function confirmAction() {
     if (pendingAction == null || actionInProgress) return;
 
     actionInProgress = true;
@@ -651,11 +741,16 @@
         }
         break;
 
+      case "taskBusy":
+        actionInProgress = false;
+        prepareScanAction();
+        break;
+
       case "playerSync":
         if (!(await emitGameAction({
           action: "requestPlayerSync",
           targetColor: pendingAction.targetColor,
-          mode: syncMode,
+          mode: "sync",
         })).success) {
           actionInProgress = false;
         } else gotoReplace("/sync");
@@ -703,6 +798,116 @@
         break;
       }
     }
+  }
+
+  function silentTargetFor(action: PendingAction | null): Color | null {
+    if (action?.kind === "playerSync" || action?.kind === "playerInteraction") {
+      return action.silentTargetColor ?? null;
+    }
+    return null;
+  }
+
+  function isNeutralPlayerInteraction(action: PendingAction | null) {
+    return action?.kind === "playerSync" || action?.kind === "playerInteraction";
+  }
+
+  function startInteractionHold() {
+    if (!isNeutralPlayerInteraction(pendingAction)) return;
+    const targetColor = silentTargetFor(pendingAction);
+    if (actionInProgress || interactionHolding) return;
+
+    const attempt = ++interactionHoldAttempt;
+    interactionHolding = true;
+    interactionHoldCompleted = false;
+    interactionHoldBegin = targetColor == null
+      ? null
+      : emitGameAction({
+          action: "beginSilentEliminationHold",
+          targetColor,
+        });
+
+    interactionHoldTimer = setTimeout(async () => {
+      if (attempt !== interactionHoldAttempt || !interactionHolding) return;
+      interactionHoldCompleted = true;
+
+      // Every role receives the same neutral hold feedback. Only an agent with
+      // a valid ready target has a server-side elimination hold to complete.
+      if (targetColor == null || interactionHoldBegin == null) return;
+
+      const beginResult = await interactionHoldBegin;
+      if (
+        attempt !== interactionHoldAttempt ||
+        !beginResult.success
+      ) {
+        interactionHolding = false;
+        interactionHoldBegin = null;
+        return;
+      }
+
+      actionInProgress = true;
+      const result = await emitGameAction({
+        action: "silentKillPlayer",
+        targetColor,
+      });
+      interactionHolding = false;
+      interactionHoldTimer = null;
+      interactionHoldBegin = null;
+      if (result.success) gotoReplace("/game");
+      else actionInProgress = false;
+    }, SILENT_KILL_HOLD_MS);
+  }
+
+  async function finishInteractionTap() {
+    if (!interactionHolding) return;
+    const attempt = interactionHoldAttempt;
+    const holdCompleted = interactionHoldCompleted;
+    interactionHolding = false;
+    if (interactionHoldTimer != null) clearTimeout(interactionHoldTimer);
+    interactionHoldTimer = null;
+
+    if (holdCompleted) {
+      interactionHoldCompleted = false;
+      if (interactionHoldBegin == null) return;
+      // The successful agent hold owns completion and navigation. Do not turn
+      // its release into an accidental synchronization request.
+      return;
+    }
+
+    const beginPromise = interactionHoldBegin;
+    interactionHoldBegin = null;
+    if (attempt !== interactionHoldAttempt || interactionHoldCompleted) return;
+    if (beginPromise != null) {
+      void beginPromise.then((beginResult) => {
+        if (beginResult.success) {
+          void emitGameAction({ action: "cancelSilentEliminationHold" });
+        }
+      });
+    }
+    // Socket.IO keeps event order and requestPlayerSync also clears a pending
+    // elimination hold server-side. Do not add a network round trip to a tap.
+    await confirmAction();
+  }
+
+  async function abortInteractionHold() {
+    if (!interactionHolding) return;
+    interactionHolding = false;
+    interactionHoldAttempt += 1;
+    if (interactionHoldTimer != null) clearTimeout(interactionHoldTimer);
+    interactionHoldTimer = null;
+    const beginResult = interactionHoldBegin == null
+      ? null
+      : await interactionHoldBegin;
+    interactionHoldBegin = null;
+    if (beginResult?.success) {
+      await emitGameAction({ action: "cancelSilentEliminationHold" });
+    }
+    interactionHoldCompleted = false;
+  }
+
+  function handleMaskedKeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    confirmAction();
   }
 
   function cancelAction() {
@@ -817,19 +1022,30 @@
       {/if}
 
       <div class="actions">
-        <MainButton disabled={actionInProgress} on:click={() => confirmAction()}>
-          {actionInProgress ? bi("Подождите…", "Please wait…") : pendingAction.primaryLabel}
-        </MainButton>
-
-        {#if pendingAction.kind === "playerSync" && pendingAction.canEliminate}
+        {#if isNeutralPlayerInteraction(pendingAction)}
           <button
             type="button"
-            class="covert-button"
+            class="masked-main-button border border-green-600 disabled:text-gray-400 w-full"
+            class:interaction-holding={interactionHolding}
             disabled={actionInProgress}
-            on:click={() => confirmAction("eliminate")}
+            on:pointerdown|preventDefault={startInteractionHold}
+            on:pointerup|preventDefault={finishInteractionTap}
+            on:pointercancel={abortInteractionHold}
+            on:pointerleave={abortInteractionHold}
+            on:keydown={handleMaskedKeydown}
+            on:click|preventDefault
+            on:contextmenu|preventDefault
           >
-            {bi("Скрыто: устранить после синхронизации", "Covert: eliminate after synchronization")}
+            {interactionHolding
+              ? bi("Сканирование…", "Scanning…")
+              : actionInProgress
+                ? bi("Подождите…", "Please wait…")
+                : pendingAction.primaryLabel}
           </button>
+        {:else}
+          <MainButton disabled={actionInProgress} on:click={() => confirmAction()}>
+            {actionInProgress ? bi("Подождите…", "Please wait…") : pendingAction.primaryLabel}
+          </MainButton>
         {/if}
 
         <button class="secondary-button" on:click={cancelAction}>
@@ -940,24 +1156,40 @@
     font-weight: 700;
   }
 
-  .covert-button {
-    width: min(100%, 340px);
-    min-height: 46px;
-    padding: 11px 16px;
-    border: 1px solid rgba(248, 113, 113, 0.55);
-    border-radius: 13px;
-    background: rgba(127, 29, 29, 0.32);
-    color: #fecaca;
-    font-size: 12px;
-    font-weight: 900;
-    line-height: 1.25;
+  .masked-main-button {
+    min-height: 52px;
+    max-width: 18rem;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: clamp(15px, 4vw, 18px);
+    line-height: 1.2;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
-  .covert-button:disabled {
+  .masked-main-button:disabled {
     opacity: 0.5;
+  }
+
+  .masked-main-button.interaction-holding {
+    background-image: linear-gradient(
+      90deg,
+      rgba(21, 128, 61, 0.88),
+      rgba(34, 197, 94, 0.5),
+      rgba(21, 128, 61, 0.88)
+    );
+    background-size: 220% 100%;
+    animation: neutral-hold 0.7s linear infinite;
   }
 
   .secondary-button:active {
     transform: scale(0.98);
+  }
+
+  @keyframes neutral-hold {
+    to { background-position: -220% 0; }
   }
 </style>

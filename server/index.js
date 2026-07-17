@@ -339,6 +339,14 @@ io.on("connection", (client) => {
       return;
     }
 
+    if (playerLobby.isPlayerHacked(currentPlayer.color)) {
+      reject(
+        "PLAYER_HACKED",
+        "Управление временно заблокировано взломом. Дождитесь окончания помех."
+      );
+      return;
+    }
+
     switch (action) {
       case "callMeeting": {
         if (playerLobby.status.state !== "started") {
@@ -376,9 +384,10 @@ io.on("connection", (client) => {
           );
           break;
         }
-        currentPlayer.currentlyDoing = { activity: "nothing" };
-        playerLobby.synchronize();
-        accept();
+        applyResult(
+          playerLobby.clearPlayerActivity(currentPlayer.color),
+          "Не удалось освободить игровую точку."
+        );
         break;
 
       case "enterMeeting":
@@ -400,12 +409,36 @@ io.on("connection", (client) => {
       case "killPlayer":
         if (!config.devMode) {
           reject(
-            "SYNC_REQUIRED",
-            "Устранение выполняется только через взаимную синхронизацию."
+            "DIRECT_KILL_DISABLED",
+            "Прямое устранение доступно только в режиме разработки."
           );
           break;
         }
         applyResult(playerLobby.killPlayer(info.targetColor, currentPlayer.color), "Не удалось устранить игрока.");
+        break;
+
+      case "silentKillPlayer":
+        applyResult(
+          playerLobby.silentKillPlayer(info.targetColor, currentPlayer.color),
+          "Не удалось скрыто устранить игрока."
+        );
+        break;
+
+      case "beginSilentEliminationHold":
+        applyResult(
+          playerLobby.beginSilentEliminationHold(
+            currentPlayer.color,
+            info.targetColor
+          ),
+          "Не удалось начать скрытое взаимодействие."
+        );
+        break;
+
+      case "cancelSilentEliminationHold":
+        applyResult(
+          playerLobby.cancelSilentEliminationHold(currentPlayer.color),
+          "Не удалось отменить скрытое взаимодействие."
+        );
         break;
 
       case "requestPlayerSync":
@@ -468,17 +501,31 @@ io.on("connection", (client) => {
           break;
         }
 
-        const taskStarted = currentPlayer.startTask(info.taskNumber, info.taskTag);
+        const taskStarted = playerLobby.startPlayerTask(
+          currentPlayer.color,
+          info.taskNumber,
+          info.taskTag
+        );
 
-        if (taskStarted) {
+        if (taskStarted[0]) {
           playerLobby.synchronize();
           accept();
         } else {
-          reject("TASK_NOT_AVAILABLE", "Задание недоступно или уже выполняется другое действие.");
+          reject(
+            "TASK_NOT_AVAILABLE",
+            taskStarted[1] || "Задание недоступно или уже выполняется другое действие."
+          );
         }
 
         break;
       }
+
+      case "toggleAgentTask":
+        applyResult(
+          playerLobby.toggleAgentTask(currentPlayer.color, info.taskNumber),
+          "Не удалось изменить отметку задания."
+        );
+        break;
 
       case "taskCompleted": {
         if (playerLobby.status.state !== "started") {
@@ -512,9 +559,16 @@ io.on("connection", (client) => {
         }
 
         if (currentPlayer.role.name === "impostor") {
+          const wasDoingTask = currentPlayer.currentlyDoing.activity === "task";
           if (!currentPlayer.finishTask(info.taskNumber)) {
+            if (currentPlayer.currentlyDoing.activity === "nothing") {
+              playerLobby.releaseTaskStationForPlayer(currentPlayer.color);
+            }
             reject("TASK_NOT_AVAILABLE", "Не удалось сымитировать выполнение задания.");
             break;
+          }
+          if (wasDoingTask) {
+            playerLobby.releaseTaskStationForPlayer(currentPlayer.color);
           }
           playerLobby.synchronize();
           accept();
@@ -532,12 +586,17 @@ io.on("connection", (client) => {
         );
 
         if (!taskWasCompleted) {
+          if (currentPlayer.currentlyDoing.activity === "nothing") {
+            playerLobby.releaseTaskStationForPlayer(currentPlayer.color);
+          }
           console.debug(
             `Rejected taskCompleted: task ${info.taskNumber} was not actually active for ${currentPlayer.name}`
           );
           reject("TASK_NOT_ACTIVE", "Задание не было запущено. Снова отсканируйте точку.");
           break;
         }
+
+        playerLobby.releaseTaskStationForPlayer(currentPlayer.color);
 
         const taskComplete = completedTask.status === "completed";
 
@@ -703,6 +762,22 @@ io.on("connection", (client) => {
 
     currentPlayer.assignTasks(playerLobby.activities);
     playerLobby.synchronize();
+  });
+
+  client.on("devSetPlayerRole", (payload = {}) => {
+    if (!config.devMode) {
+      client.emit("error", { error: "Действия разработчика отключены." });
+      return;
+    }
+    if (currentPlayer == null || playerLobby == null) return;
+    if (isStaleSocket()) {
+      console.debug("Rejected devSetPlayerRole from stale socket");
+      return;
+    }
+
+    const { role } = objectPayload(payload);
+    const result = playerLobby.devSetPlayerRole(currentPlayer.color, role);
+    if (!result[0]) client.emit("error", { error: result[1] });
   });
 
   client.on("restartLobby", (acknowledge = () => {}) => {

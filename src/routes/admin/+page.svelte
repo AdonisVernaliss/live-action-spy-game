@@ -706,7 +706,10 @@
                 <span>{bi("Взлом игроков", "Player hack")}</span>
                 <strong>
                   {selectedLobby.activeEffects.hacked
-                    ? bi(`${selectedLobby.activeEffects.hacked.affectedPlayers.length} целей`, `${selectedLobby.activeEffects.hacked.affectedPlayers.length} targets`)
+                    ? bi(
+                        `${selectedLobby.activeEffects.hacked.affectedPlayers.length} целей · ${selectedLobby.activeEffects.hacked.countDown} сек.`,
+                        `${selectedLobby.activeEffects.hacked.affectedPlayers.length} targets · ${selectedLobby.activeEffects.hacked.countDown}s`
+                      )
                     : bi("неактивен", "inactive")}
                 </strong>
               </article>
@@ -946,6 +949,7 @@
                   <button on:click={() => runAction("callMeeting")}>{bi("Имитировать собрание", "Simulate meeting")}</button>
                   <button on:click={() => runAction("launchSabotage", { kind: "virusScan" })}>{bi("Вирусная проверка", "Virus scan")}</button>
                   <button on:click={() => runAction("launchSabotage", { kind: "firewallBreach" })}>{bi("Взлом защиты", "Firewall breach")}</button>
+                  <button on:click={() => runAction("launchSabotage", { kind: "hackPlayer" })}>{bi("Взлом игрока", "Player hack")}</button>
                 {/if}
               </div>
 

@@ -188,6 +188,11 @@ export const EMERGENCY_MEETINGS_PER_PLAYER = 1;
 
 export const KILL_COOLDOWN_SECS = 55;
 
+// Holding the normal-looking player interaction button for this long performs
+// an elimination. A normal tap remains a safe synchronization request.
+export const SILENT_KILL_HOLD_MS = 700;
+export const SILENT_KILL_HOLD_MAX_MS = 3_000;
+
 // A real player-to-player synchronization intentionally takes long enough for
 // both people to stand together without revealing whether it is harmless.
 export const PLAYER_SYNC_DURATION_MS = 15_000;
@@ -196,8 +201,12 @@ export const PLAYER_SYNC_REQUEST_TIMEOUT_MS = 30_000;
 // The initial cooldown for a sabotage after a new round starts
 export const SABO_COOLDOWN_SECS = 45;
 
-export const HACKED_SECS = 12;
-export const HACK_COOLDOWN = 15;
+export const HACKED_SECS = 20;
+export const HACK_COOLDOWN = 35;
+
+// A task point is released normally when its minigame ends. This lease is only
+// a safety net for a closed tab or a phone that vanished without disconnecting.
+export const TASK_STATION_LEASE_MS = 3 * 60 * 1000;
 
 export const VIRUS_SCAN_FAILED_PUNISH_SECS = 25;
 export const VIRUS_SCAN_COOLDOWN = 30;
@@ -222,6 +231,8 @@ export const TEST_MODE_TIMERS = Object.freeze({
   firewall: 25,
   firewallRepairHoldMs: 2_000,
   playerSyncDurationMs: 3_000,
+  hack: 6,
+  taskStationLeaseMs: 30_000,
 });
 
 export const ACTIVE_EFFECTS_BASE = {
